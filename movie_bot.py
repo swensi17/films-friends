@@ -26,16 +26,18 @@ def create_main_markup():
 
 def create_watch_markup(session_id):
     markup = InlineKeyboardMarkup()
-    # Создаем кнопку для запуска mini app
-    webapp = WebAppInfo(url=f"{WEBAPP_URL}?session={session_id}")
-    markup.add(InlineKeyboardButton(
-        text="▶️ Открыть плеер",
-        web_app=webapp
-    ))
-    markup.add(
-        InlineKeyboardButton("📨 Пригласить друзей", callback_data=f"invite_{session_id}"),
-        InlineKeyboardButton("💬 Чат просмотра", callback_data=f"chat_{session_id}")
-    )
+    # Создаем кнопку для запуска mini app с передачей URL видео
+    session = active_sessions.get(session_id)
+    if session:
+        webapp = WebAppInfo(url=f"{WEBAPP_URL}?session={session_id}&url={session['url']}")
+        markup.add(InlineKeyboardButton(
+            text="▶️ Открыть плеер",
+            web_app=webapp
+        ))
+        markup.add(
+            InlineKeyboardButton("📨 Пригласить друзей", callback_data=f"invite_{session_id}"),
+            InlineKeyboardButton("💬 Чат просмотра", callback_data=f"chat_{session_id}")
+        )
     return markup
 
 @bot.message_handler(commands=['start'])

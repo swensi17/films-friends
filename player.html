@@ -6,75 +6,243 @@
     <title>Совместный просмотр</title>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            transition: all 0.3s ease;
+        }
+
         body {
             margin: 0;
             padding: 0;
             background-color: #1a1a1a;
             color: white;
             font-family: Arial, sans-serif;
+            min-height: 100vh;
         }
+
+        .loading {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0,0,0,0.9);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+        }
+
+        .loading-spinner {
+            width: 50px;
+            height: 50px;
+            border: 5px solid #f3f3f3;
+            border-top: 5px solid #3498db;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
         .player-container {
             width: 100%;
-            max-width: 800px;
+            max-width: 1200px;
             margin: 0 auto;
-            padding: 10px;
+            padding: 20px;
+            opacity: 0;
+            transform: translateY(20px);
+            animation: fadeIn 0.5s ease forwards;
         }
+
+        @keyframes fadeIn {
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .video-wrapper {
+            position: relative;
+            width: 100%;
+            background: #000;
+            border-radius: 12px;
+            overflow: hidden;
+            box-shadow: 0 10px 20px rgba(0,0,0,0.3);
+            margin-bottom: 20px;
+        }
+
         .video-player {
             width: 100%;
             aspect-ratio: 16/9;
             background: #000;
-            border-radius: 8px;
+            border-radius: 12px;
         }
+
         .controls {
             margin-top: 15px;
             display: flex;
             justify-content: center;
-            gap: 10px;
+            gap: 15px;
+            flex-wrap: wrap;
         }
+
         .button {
             background: #2ea6ff;
             border: none;
-            padding: 10px 20px;
+            padding: 12px 24px;
             border-radius: 8px;
             color: white;
             cursor: pointer;
+            font-size: 16px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            transition: transform 0.2s ease, background 0.3s ease;
         }
+
+        .button:hover {
+            background: #1e90ff;
+            transform: translateY(-2px);
+        }
+
+        .button:active {
+            transform: translateY(0);
+        }
+
+        .info-panel {
+            background: rgba(255,255,255,0.1);
+            border-radius: 12px;
+            padding: 20px;
+            margin-top: 20px;
+            backdrop-filter: blur(10px);
+        }
+
         .viewers {
             margin-top: 15px;
-            padding: 10px;
-            background: rgba(255,255,255,0.1);
-            border-radius: 8px;
         }
-        .chat {
-            margin-top: 15px;
-            height: 200px;
+
+        .viewer-list {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin-top: 10px;
+        }
+
+        .viewer-item {
             background: rgba(255,255,255,0.1);
-            border-radius: 8px;
-            padding: 10px;
+            padding: 8px 15px;
+            border-radius: 20px;
+            font-size: 14px;
+        }
+
+        .chat {
+            margin-top: 20px;
+            height: 300px;
+            background: rgba(255,255,255,0.05);
+            border-radius: 12px;
+            padding: 15px;
             overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .chat-message {
+            background: rgba(255,255,255,0.1);
+            padding: 10px 15px;
+            border-radius: 8px;
+            margin-bottom: 10px;
+            max-width: 80%;
+            align-self: flex-start;
+            word-break: break-word;
+        }
+
+        .chat-message.own {
+            background: #2ea6ff;
+            align-self: flex-end;
+        }
+
+        .chat-input {
+            display: flex;
+            gap: 10px;
+            margin-top: 15px;
+        }
+
+        .chat-input input {
+            flex: 1;
+            padding: 12px;
+            border: none;
+            border-radius: 8px;
+            background: rgba(255,255,255,0.1);
+            color: white;
+            font-size: 16px;
+        }
+
+        .chat-input input:focus {
+            outline: none;
+            background: rgba(255,255,255,0.15);
+        }
+
+        @media (max-width: 768px) {
+            .player-container {
+                padding: 10px;
+            }
+            
+            .controls {
+                flex-direction: column;
+            }
+            
+            .button {
+                width: 100%;
+                justify-content: center;
+            }
         }
     </style>
 </head>
 <body>
+    <div id="loading" class="loading">
+        <div class="loading-spinner"></div>
+    </div>
+
     <div class="player-container">
-        <video id="videoPlayer" class="video-player" controls>
-            <source id="videoSource" src="" type="video/mp4">
-            Ваш браузер не поддерживает видео.
-        </video>
+        <div class="video-wrapper">
+            <video id="videoPlayer" class="video-player" controls>
+                <source id="videoSource" src="" type="video/mp4">
+                Ваш браузер не поддерживает видео.
+            </video>
+        </div>
         
         <div class="controls">
-            <button class="button" onclick="syncTime()">Синхронизировать</button>
-            <button class="button" onclick="shareTime()">Поделиться временем</button>
+            <button class="button" onclick="syncTime()">
+                <span>🔄</span> Синхронизировать
+            </button>
+            <button class="button" onclick="shareTime()">
+                <span>📤</span> Поделиться временем
+            </button>
+            <button class="button" onclick="toggleFullscreen()">
+                <span>⛶</span> Полный экран
+            </button>
         </div>
 
-        <div class="viewers">
-            <h3>Зрители:</h3>
-            <div id="viewersList"></div>
-        </div>
+        <div class="info-panel">
+            <div class="viewers">
+                <h3>👥 Зрители онлайн:</h3>
+                <div id="viewersList" class="viewer-list"></div>
+            </div>
 
-        <div class="chat">
-            <h3>Чат:</h3>
-            <div id="chatMessages"></div>
+            <div class="chat">
+                <div id="chatMessages"></div>
+                <div class="chat-input">
+                    <input type="text" id="messageInput" placeholder="Написать сообщение...">
+                    <button class="button" onclick="sendMessage()">
+                        <span>📤</span>
+                    </button>
+                </div>
+            </div>
         </div>
     </div>
 
@@ -82,55 +250,129 @@
         let tg = window.Telegram.WebApp;
         tg.expand();
 
-        // Получаем URL видео из параметров
+        // Получаем параметры URL
         const urlParams = new URLSearchParams(window.location.search);
         const videoUrl = urlParams.get('url');
+        const sessionId = urlParams.get('session');
         
-        if (videoUrl) {
-            document.getElementById('videoSource').src = videoUrl;
-            document.getElementById('videoPlayer').load();
+        const videoPlayer = document.getElementById('videoPlayer');
+        const loading = document.getElementById('loading');
+
+        // Функция инициализации плеера
+        async function initializePlayer() {
+            if (videoUrl) {
+                try {
+                    // Показываем загрузку
+                    loading.style.display = 'flex';
+                    
+                    // Устанавливаем источник видео
+                    videoPlayer.src = videoUrl;
+                    
+                    // Ждем, пока видео загрузится
+                    await videoPlayer.load();
+                    
+                    // Скрываем загрузку
+                    loading.style.display = 'none';
+                    
+                    // Автоматически начинаем воспроизведение
+                    try {
+                        await videoPlayer.play();
+                    } catch (playError) {
+                        console.log('Автовоспроизведение заблокировано браузером');
+                    }
+                } catch (error) {
+                    console.error('Ошибка при загрузке видео:', error);
+                    alert('Ошибка при загрузке видео. Пожалуйста, проверьте ссылку.');
+                }
+            }
         }
 
+        // Инициализация при загрузке страницы
+        window.addEventListener('load', initializePlayer);
+
         function syncTime() {
-            // Здесь будет логика синхронизации времени с другими зрителями
             tg.sendData(JSON.stringify({
                 action: 'sync',
-                currentTime: document.getElementById('videoPlayer').currentTime
+                session_id: sessionId,
+                currentTime: videoPlayer.currentTime
             }));
         }
 
         function shareTime() {
-            // Отправка текущего времени в чат
+            const time = videoPlayer.currentTime;
+            const minutes = Math.floor(time / 60);
+            const seconds = Math.floor(time % 60);
             tg.sendData(JSON.stringify({
                 action: 'share_time',
-                currentTime: document.getElementById('videoPlayer').currentTime
+                session_id: sessionId,
+                message: `🕐 Текущее время просмотра: ${minutes}:${seconds.toString().padStart(2, '0')}`
             }));
         }
+
+        function toggleFullscreen() {
+            if (!document.fullscreenElement) {
+                videoPlayer.requestFullscreen();
+            } else {
+                document.exitFullscreen();
+            }
+        }
+
+        function sendMessage() {
+            const input = document.getElementById('messageInput');
+            const message = input.value.trim();
+            
+            if (message) {
+                tg.sendData(JSON.stringify({
+                    action: 'chat_message',
+                    session_id: sessionId,
+                    message: message
+                }));
+                
+                // Добавляем сообщение локально
+                addChatMessage({
+                    user: 'Вы',
+                    text: message,
+                    own: true
+                });
+                
+                input.value = '';
+            }
+        }
+
+        function updateViewersList(viewers) {
+            const viewersList = document.getElementById('viewersList');
+            viewersList.innerHTML = viewers.map(viewer => 
+                `<div class="viewer-item">👤 ${viewer.name}</div>`
+            ).join('');
+        }
+
+        function addChatMessage(message) {
+            const chatMessages = document.getElementById('chatMessages');
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `chat-message${message.own ? ' own' : ''}`;
+            messageDiv.textContent = `${message.user}: ${message.text}`;
+            chatMessages.appendChild(messageDiv);
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+        }
+
+        // Обработка нажатия Enter в поле ввода
+        document.getElementById('messageInput').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                sendMessage();
+            }
+        });
 
         // Обработка сообщений от бота
         window.addEventListener('message', function(event) {
             const data = JSON.parse(event.data);
             if (data.type === 'sync_time') {
-                document.getElementById('videoPlayer').currentTime = data.time;
+                videoPlayer.currentTime = data.time;
             } else if (data.type === 'update_viewers') {
                 updateViewersList(data.viewers);
             } else if (data.type === 'new_message') {
                 addChatMessage(data.message);
             }
         });
-
-        function updateViewersList(viewers) {
-            const viewersList = document.getElementById('viewersList');
-            viewersList.innerHTML = viewers.map(viewer => 
-                `<div>${viewer.name}</div>`
-            ).join('');
-        }
-
-        function addChatMessage(message) {
-            const chatMessages = document.getElementById('chatMessages');
-            chatMessages.innerHTML += `<div>${message.user}: ${message.text}</div>`;
-            chatMessages.scrollTop = chatMessages.scrollHeight;
-        }
     </script>
 </body>
 </html>
