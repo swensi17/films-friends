@@ -138,6 +138,83 @@
             padding: 8px 15px;
             border-radius: 20px;
             font-size: 14px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .viewer-item.creator {
+            background: linear-gradient(45deg, #ff6b6b, #feca57);
+            color: white;
+        }
+
+        .viewer-join-notification {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: rgba(46, 213, 115, 0.9);
+            color: white;
+            padding: 15px 20px;
+            border-radius: 10px;
+            animation: slideIn 0.5s ease forwards, fadeOut 0.5s ease 3s forwards;
+            z-index: 1000;
+        }
+
+        @keyframes slideIn {
+            from {
+                transform: translateX(100%);
+                opacity: 0;
+            }
+            to {
+                transform: translateX(0);
+                opacity: 1;
+            }
+        }
+
+        @keyframes fadeOut {
+            to {
+                opacity: 0;
+                visibility: hidden;
+            }
+        }
+
+        .stream-info {
+            background: rgba(255,255,255,0.1);
+            border-radius: 12px;
+            padding: 15px;
+            margin-bottom: 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .stream-status {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .status-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background: #2ecc71;
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0% {
+                transform: scale(1);
+                opacity: 1;
+            }
+            50% {
+                transform: scale(1.2);
+                opacity: 0.7;
+            }
+            100% {
+                transform: scale(1);
+                opacity: 1;
+            }
         }
 
         .chat {
@@ -209,6 +286,16 @@
     </div>
 
     <div class="player-container">
+        <div class="stream-info">
+            <div class="stream-status">
+                <div class="status-dot"></div>
+                <span>Прямой эфир</span>
+            </div>
+            <div class="viewers-count">
+                👥 <span id="viewersCount">0</span> зрителей
+            </div>
+        </div>
+
         <div class="video-wrapper">
             <video id="videoPlayer" class="video-player" controls>
                 <source id="videoSource" src="" type="video/mp4">
@@ -250,31 +337,75 @@
         let tg = window.Telegram.WebApp;
         tg.expand();
 
-        // Получаем параметры URL
         const urlParams = new URLSearchParams(window.location.search);
         const videoUrl = urlParams.get('url');
         const sessionId = urlParams.get('session');
+        const startTime = parseFloat(urlParams.get('t')) || 0;
         
         const videoPlayer = document.getElementById('videoPlayer');
         const loading = document.getElementById('loading');
+        let isCreator = false;
 
-        // Функция инициализации плеера
+        // Функция для показа уведомления о новом зрителе
+        function showViewerJoinNotification(viewerName) {
+            const notification = document.createElement('div');
+            notification.className = 'viewer-join-notification';
+            notification.innerHTML = `
+                👋 ${viewerName} присоединился к просмотру
+            `;
+            document.body.appendChild(notification);
+            setTimeout(() => {
+                notification.remove();
+            }, 3500);
+        }
+
+        // Функция обновления списка зрителей
+        function updateViewersList(viewers) {
+            const viewersList = document.getElementById('viewersList');
+            const viewersCount = document.getElementById('viewersCount');
+            
+            viewersList.innerHTML = viewers.map(viewer => `
+                <div class="viewer-item${viewer.id === tg.initDataUnsafe.user.id ? ' creator' : ''}">
+                    ${viewer.id === tg.initDataUnsafe.user.id ? '👑' : '👤'} ${viewer.name}
+                    <span style="opacity: 0.7">• присоединился в ${viewer.joined_at}</span>
+                </div>
+            `).join('');
+            
+            viewersCount.textContent = viewers.length;
+        }
+
+        // Инициализация плеера
         async function initializePlayer() {
             if (videoUrl) {
                 try {
-                    // Показываем загрузку
                     loading.style.display = 'flex';
-                    
-                    // Устанавливаем источник видео
                     videoPlayer.src = videoUrl;
-                    
-                    // Ждем, пока видео загрузится
                     await videoPlayer.load();
                     
-                    // Скрываем загрузку
+                    // Устанавливаем начальное время
+                    videoPlayer.currentTime = startTime;
+                    
                     loading.style.display = 'none';
                     
-                    // Автоматически начинаем воспроизведение
+                    // Уведомляем о присоединении
+                    tg.sendData(JSON.stringify({
+                        action: 'viewer_joined',
+                        session_id: sessionId
+                    }));
+                    
+                    // Если мы создатель, начинаем отправлять обновления времени
+                    if (isCreator) {
+                        setInterval(() => {
+                            if (!videoPlayer.paused) {
+                                tg.sendData(JSON.stringify({
+                                    action: 'update_time',
+                                    session_id: sessionId,
+                                    currentTime: videoPlayer.currentTime
+                                }));
+                            }
+                        }, 1000);
+                    }
+                    
                     try {
                         await videoPlayer.play();
                     } catch (playError) {
@@ -286,9 +417,6 @@
                 }
             }
         }
-
-        // Инициализация при загрузке страницы
-        window.addEventListener('load', initializePlayer);
 
         function syncTime() {
             tg.sendData(JSON.stringify({
@@ -339,13 +467,6 @@
             }
         }
 
-        function updateViewersList(viewers) {
-            const viewersList = document.getElementById('viewersList');
-            viewersList.innerHTML = viewers.map(viewer => 
-                `<div class="viewer-item">👤 ${viewer.name}</div>`
-            ).join('');
-        }
-
         function addChatMessage(message) {
             const chatMessages = document.getElementById('chatMessages');
             const messageDiv = document.createElement('div');
@@ -365,14 +486,44 @@
         // Обработка сообщений от бота
         window.addEventListener('message', function(event) {
             const data = JSON.parse(event.data);
-            if (data.type === 'sync_time') {
+            
+            if (data.type === 'time_update' && !isCreator) {
                 videoPlayer.currentTime = data.time;
+                if (data.is_playing && videoPlayer.paused) {
+                    videoPlayer.play();
+                } else if (!data.is_playing && !videoPlayer.paused) {
+                    videoPlayer.pause();
+                }
             } else if (data.type === 'update_viewers') {
                 updateViewersList(data.viewers);
+            } else if (data.type === 'viewer_joined') {
+                showViewerJoinNotification(data.viewer_name);
             } else if (data.type === 'new_message') {
                 addChatMessage(data.message);
             }
         });
+
+        // Запрещаем управление плеером для не-создателей
+        videoPlayer.addEventListener('play', function() {
+            if (!isCreator) {
+                videoPlayer.pause();
+            }
+        });
+
+        videoPlayer.addEventListener('pause', function() {
+            if (!isCreator) {
+                videoPlayer.play();
+            }
+        });
+
+        videoPlayer.addEventListener('seeked', function() {
+            if (!isCreator) {
+                videoPlayer.currentTime = startTime;
+            }
+        });
+
+        // Инициализация при загрузке страницы
+        window.addEventListener('load', initializePlayer);
     </script>
 </body>
 </html>
