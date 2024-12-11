@@ -1,11 +1,12 @@
 import telebot
-from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo
+from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo, InputTextMessageContent, InlineQueryResultArticle
 import json
 from datetime import datetime
 import os
 from urllib.parse import quote
 import uuid
 import time
+from telebot import types
 
 # Инициализация бота
 bot = telebot.TeleBot('7366514318:AAFNSvdBe5L9RM27mY9OnBEwRIH2dmizUVs')
@@ -91,24 +92,29 @@ def create_watch_markup(session_id, user_id):
     )
     
     markup = InlineKeyboardMarkup()
-    markup.add(InlineKeyboardButton(
-        text="▶️ Открыть плеер",
-        web_app=webapp
-    ))
+    markup.row(
+        InlineKeyboardButton(
+            text="▶️ Открыть плеер",
+            web_app=webapp
+        )
+    )
     
     # Добавляем кнопку для приглашения друзей
-    invite_link = create_invite_link(session_id)
-    markup.add(InlineKeyboardButton(
-        text="📨 Пригласить друзей",
-        url=invite_link
-    ))
+    markup.row(
+        InlineKeyboardButton(
+            text="📨 Отправить друзьям",
+            switch_inline_query=f"share_{session_id}"
+        )
+    )
     
     # Добавляем кнопку завершения только для создателя
     if user_id == session.creator_id:
-        markup.add(InlineKeyboardButton(
-            text="🛑 Завершить трансляцию",
-            callback_data=f"end_stream_{session_id}"
-        ))
+        markup.row(
+            InlineKeyboardButton(
+                text="🛑 Завершить трансляцию",
+                callback_data=f"end_stream_{session_id}"
+            )
+        )
     
     return markup
 
@@ -413,6 +419,43 @@ def handle_webapp_data(message):
     except Exception as e:
         print(f"Error handling webapp data: {e}")
         bot.reply_to(message, "❌ Произошла ошибка при обработке данных")
+
+@bot.inline_handler(lambda query: query.query.startswith('share_'))
+def share_session_inline(inline_query):
+    try:
+        session_id = inline_query.query.replace('share_', '')
+        if session_id in active_sessions:
+            session = active_sessions[session_id]
+            if session.is_active:
+                invite_link = create_invite_link(session_id)
+                
+                # Создаем текст приглашения
+                share_text = (
+                    f"🎬 Приглашаю тебя посмотреть видео вместе!\n"
+                    f"👤 Создатель: {session.creator_name}\n"
+                    f"👥 Зрителей: {len(session.viewers)}\n\n"
+                    f"🔗 Присоединяйся: {invite_link}"
+                )
+                
+                # Создаем результат для инлайн-режима
+                result = InlineQueryResultArticle(
+                    id=session_id,
+                    title="Отправить приглашение",
+                    description=f"Создатель: {session.creator_name} | Зрителей: {len(session.viewers)}",
+                    input_message_content=InputTextMessageContent(share_text),
+                    thumb_url="https://img.icons8.com/color/48/000000/cinema-.png",
+                    reply_markup=InlineKeyboardMarkup().add(
+                        InlineKeyboardButton("👋 Присоединиться", url=invite_link)
+                    )
+                )
+                
+                bot.answer_inline_query(
+                    inline_query.id,
+                    [result],
+                    cache_time=0
+                )
+    except Exception as e:
+        print(f"Error in share_session_inline: {e}")
 
 # Запуск бота
 bot.infinity_polling()
