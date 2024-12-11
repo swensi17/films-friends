@@ -3,6 +3,7 @@ from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo
 import json
 from datetime import datetime
 import os
+from urllib.parse import quote
 
 # Инициализация бота
 bot = telebot.TeleBot('7366514318:AAFNSvdBe5L9RM27mY9OnBEwRIH2dmizUVs')
@@ -10,8 +11,12 @@ bot = telebot.TeleBot('7366514318:AAFNSvdBe5L9RM27mY9OnBEwRIH2dmizUVs')
 # Хранение активных сессий просмотра
 active_sessions = {}
 
-# URL вашего веб-приложения (замените на реальный URL после деплоя)
-WEBAPP_URL = "https://swensi17.github.io/films-friends/player.html"  # URL на GitHub Pages
+# URL вашего веб-приложения
+WEBAPP_URL = "https://swensi17.github.io/films-friends/player.html"
+
+def create_invite_link(session_id):
+    """Создает пригласительную ссылку для сессии"""
+    return f"https://t.me/your_bot_username?start=join_{session_id}"
 
 def create_main_markup():
     markup = InlineKeyboardMarkup()
@@ -26,10 +31,9 @@ def create_main_markup():
 
 def create_watch_markup(session_id):
     markup = InlineKeyboardMarkup()
-    # Создаем кнопку для запуска mini app с передачей URL видео
     session = active_sessions.get(session_id)
     if session:
-        webapp = WebAppInfo(url=f"{WEBAPP_URL}?session={session_id}&url={session['url']}")
+        webapp = WebAppInfo(url=f"{WEBAPP_URL}?session={session_id}&url={quote(session['url'])}")
         markup.add(InlineKeyboardButton(
             text="▶️ Открыть плеер",
             web_app=webapp
@@ -42,6 +46,31 @@ def create_watch_markup(session_id):
 
 @bot.message_handler(commands=['start'])
 def send_welcome(message):
+    # Проверяем, есть ли параметр присоединения к сессии
+    args = message.text.split()
+    if len(args) > 1 and args[1].startswith('join_'):
+        session_id = args[1].replace('join_', '')
+        if session_id in active_sessions:
+            session = active_sessions[session_id]
+            if message.from_user.id not in session['viewers']:
+                session['viewers'].append(message.from_user.id)
+            
+            # Отправляем информацию о сессии
+            response_text = (
+                f"🎉 Вы присоединились к просмотру!\n"
+                f"🎬 Название: {session['title']}\n"
+                f"👤 Создатель: {session['creator_name']}\n"
+                f"👥 Зрителей: {len(session['viewers'])}"
+            )
+            bot.send_message(message.chat.id, response_text, reply_markup=create_watch_markup(session_id))
+            
+            # Уведомляем создателя о новом зрителе
+            bot.send_message(
+                session['creator_id'],
+                f"👋 {message.from_user.first_name} присоединился к просмотру!"
+            )
+            return
+
     welcome_text = (
         "👋 Привет! Я бот для совместного просмотра фильмов и сериалов.\n\n"
         "🎯 Что я умею:\n"
@@ -59,14 +88,27 @@ def handle_callback(call):
         bot.answer_callback_query(call.id)
         bot.send_message(call.message.chat.id, 
             "🎬 Отправьте ссылку на фильм или сериал, который хотите посмотреть")
-        
-    elif call.data.startswith("start_"):
+    
+    elif call.data.startswith("invite_"):
         session_id = call.data.split("_")[1]
         if session_id in active_sessions:
-            markup = create_watch_markup(session_id)
-            bot.edit_message_reply_markup(
+            session = active_sessions[session_id]
+            invite_link = create_invite_link(session_id)
+            share_text = (
+                f"🎬 Приглашение на совместный просмотр\n\n"
+                f"Присоединяйся ко мне! Мы смотрим:\n"
+                f"🎥 {session['title']}\n"
+                f"👥 Зрителей: {len(session['viewers'])}\n\n"
+                f"🔗 Ссылка для присоединения:\n{invite_link}"
+            )
+            markup = InlineKeyboardMarkup()
+            markup.add(InlineKeyboardButton(
+                "📤 Поделиться приглашением",
+                switch_inline_query=share_text
+            ))
+            bot.send_message(
                 call.message.chat.id,
-                call.message.message_id,
+                f"📨 Отправьте это приглашение друзьям:\n\n{share_text}",
                 reply_markup=markup
             )
             
@@ -76,7 +118,7 @@ def handle_callback(call):
             markup = InlineKeyboardMarkup()
             for session_id, session in active_sessions.items():
                 markup.add(InlineKeyboardButton(
-                    f"📺 {session['title']} ({session['creator_name']})",
+                    f"📺 {session['title']} ({session['creator_name']}) - 👥 {len(session['viewers'])}",
                     callback_data=f"join_{session_id}"
                 ))
             bot.send_message(call.message.chat.id, "Доступные сессии:", reply_markup=markup)
@@ -95,6 +137,11 @@ def handle_callback(call):
                 f"✅ Вы присоединились к просмотру!\n🎬 {session['title']}",
                 reply_markup=markup
             )
+            # Уведомляем создателя
+            bot.send_message(
+                session['creator_id'],
+                f"👋 {call.from_user.first_name} присоединился к просмотру!"
+            )
 
 @bot.message_handler(content_types=['web_app_data'])
 def handle_webapp_data(message):
@@ -104,7 +151,6 @@ def handle_webapp_data(message):
         action = data.get('action')
         
         if action == 'sync':
-            # Обработка синхронизации времени
             current_time = data.get('currentTime')
             if session_id in active_sessions:
                 session = active_sessions[session_id]
@@ -116,7 +162,6 @@ def handle_webapp_data(message):
                         )
         
         elif action == 'chat_message':
-            # Обработка сообщений чата
             if session_id in active_sessions:
                 session = active_sessions[session_id]
                 for viewer_id in session['viewers']:
@@ -148,7 +193,8 @@ def handle_messages(message):
             f"🎉 Сессия создана!\n"
             f"🔗 Ссылка: {message.text[:50]}...\n"
             f"👤 Создатель: {message.from_user.first_name}\n"
-            f"⏰ Время создания: {active_sessions[session_id]['created_at']}"
+            f"⏰ Время создания: {active_sessions[session_id]['created_at']}\n\n"
+            f"📨 Нажмите 'Пригласить друзей', чтобы позвать других зрителей!"
         )
         
         bot.reply_to(message, response_text, reply_markup=markup)
