@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Совместный просмотр</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background-color: #1a1a1a;
+            color: white;
+            font-family: Arial, sans-serif;
+        }
+        .player-container {
+            width: 100%;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 10px;
+        }
+        .video-player {
+            width: 100%;
+            aspect-ratio: 16/9;
+            background: #000;
+            border-radius: 8px;
+        }
+        .controls {
+            margin-top: 15px;
+            display: flex;
+            justify-content: center;
+            gap: 10px;
+        }
+        .button {
+            background: #2ea6ff;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 8px;
+            color: white;
+            cursor: pointer;
+        }
+        .viewers {
+            margin-top: 15px;
+            padding: 10px;
+            background: rgba(255,255,255,0.1);
+            border-radius: 8px;
+        }
+        .chat {
+            margin-top: 15px;
+            height: 200px;
+            background: rgba(255,255,255,0.1);
+            border-radius: 8px;
+            padding: 10px;
+            overflow-y: auto;
+        }
+    </style>
+</head>
+<body>
+    <div class="player-container">
+        <video id="videoPlayer" class="video-player" controls>
+            <source id="videoSource" src="" type="video/mp4">
+            Ваш браузер не поддерживает видео.
+        </video>
+        
+        <div class="controls">
+            <button class="button" onclick="syncTime()">Синхронизировать</button>
+            <button class="button" onclick="shareTime()">Поделиться временем</button>
+        </div>
+
+        <div class="viewers">
+            <h3>Зрители:</h3>
+            <div id="viewersList"></div>
+        </div>
+
+        <div class="chat">
+            <h3>Чат:</h3>
+            <div id="chatMessages"></div>
+        </div>
+    </div>
+
+    <script>
+        let tg = window.Telegram.WebApp;
+        tg.expand();
+
+        // Получаем URL видео из параметров
+        const urlParams = new URLSearchParams(window.location.search);
+        const videoUrl = urlParams.get('url');
+        
+        if (videoUrl) {
+            document.getElementById('videoSource').src = videoUrl;
+            document.getElementById('videoPlayer').load();
+        }
+
+        function syncTime() {
+            // Здесь будет логика синхронизации времени с другими зрителями
+            tg.sendData(JSON.stringify({
+                action: 'sync',
+                currentTime: document.getElementById('videoPlayer').currentTime
+            }));
+        }
+
+        function shareTime() {
+            // Отправка текущего времени в чат
+            tg.sendData(JSON.stringify({
+                action: 'share_time',
+                currentTime: document.getElementById('videoPlayer').currentTime
+            }));
+        }
+
+        // Обработка сообщений от бота
+        window.addEventListener('message', function(event) {
+            const data = JSON.parse(event.data);
+            if (data.type === 'sync_time') {
+                document.getElementById('videoPlayer').currentTime = data.time;
+            } else if (data.type === 'update_viewers') {
+                updateViewersList(data.viewers);
+            } else if (data.type === 'new_message') {
+                addChatMessage(data.message);
+            }
+        });
+
+        function updateViewersList(viewers) {
+            const viewersList = document.getElementById('viewersList');
+            viewersList.innerHTML = viewers.map(viewer => 
+                `<div>${viewer.name}</div>`
+            ).join('');
+        }
+
+        function addChatMessage(message) {
+            const chatMessages = document.getElementById('chatMessages');
+            chatMessages.innerHTML += `<div>${message.user}: ${message.text}</div>`;
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+        }
+    </script>
+</body>
+</html>
