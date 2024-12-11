@@ -113,6 +113,7 @@
         const loading = document.getElementById('loading');
         const viewersCount = document.getElementById('viewersCount');
         let session_id;
+        let lastUpdateTime = 0;
 
         // Получаем параметры из URL
         const urlParams = new URLSearchParams(window.location.search);
@@ -127,17 +128,24 @@
 
             if (videoUrl) {
                 videoPlayer.src = videoUrl;
-                videoPlayer.currentTime = startTime;
                 
                 // Автоматически включаем звук после первого взаимодействия
                 document.addEventListener('click', () => {
                     videoPlayer.muted = false;
                 }, { once: true });
 
-                // Уведомляем о присоединении
+                // Начинаем отправлять обновления времени
+                setInterval(sendTimeUpdate, 2000);
+            }
+        }
+
+        // Отправка обновления времени
+        function sendTimeUpdate() {
+            if (videoPlayer.readyState === 4) { // HAVE_ENOUGH_DATA
                 tg.sendData(JSON.stringify({
-                    action: 'viewer_joined',
-                    session_id: session_id
+                    action: 'update_time',
+                    session_id: session_id,
+                    currentTime: videoPlayer.currentTime
                 }));
             }
         }
@@ -145,17 +153,39 @@
         // Обработка событий видео
         videoPlayer.addEventListener('loadeddata', () => {
             loading.style.display = 'none';
+            // Устанавливаем начальное время
+            videoPlayer.currentTime = startTime;
             videoPlayer.play().catch(() => {
                 // Игнорируем ошибку автовоспроизведения
             });
+
+            // Уведомляем о присоединении
+            tg.sendData(JSON.stringify({
+                action: 'viewer_joined',
+                session_id: session_id
+            }));
         });
 
         // Обработка сообщений от бота
         tg.onEvent('message', function(message) {
             try {
                 const data = JSON.parse(message);
+                
                 if (data.type === 'viewer_update') {
-                    viewersCount.textContent = Object.keys(data.viewers).length;
+                    // Обновляем счетчик зрителей
+                    viewersCount.textContent = data.count || 0;
+                }
+                else if (data.type === 'sync_time') {
+                    // Проверяем, что прошло достаточно времени с последнего обновления
+                    const now = Date.now();
+                    if (now - lastUpdateTime > 1000) { // Минимум 1 секунда между обновлениями
+                        const newTime = data.time;
+                        // Проверяем, что разница во времени существенная
+                        if (Math.abs(videoPlayer.currentTime - newTime) > 1) {
+                            videoPlayer.currentTime = newTime;
+                        }
+                        lastUpdateTime = now;
+                    }
                 }
             } catch (e) {
                 console.error('Error parsing message:', e);
