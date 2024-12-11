@@ -4,6 +4,7 @@ import json
 from datetime import datetime
 import os
 from urllib.parse import quote
+import uuid
 
 # Инициализация бота
 bot = telebot.TeleBot('7366514318:AAFNSvdBe5L9RM27mY9OnBEwRIH2dmizUVs')
@@ -238,30 +239,71 @@ def handle_callback(call):
 @bot.message_handler(func=lambda message: True)
 def handle_messages(message):
     if message.text.startswith(('http://', 'https://')):
-        session_id = str(len(active_sessions) + 1)
+        # Создаем новую сессию для видео
+        session_id = str(uuid.uuid4())
         session = StreamSession(
             url=message.text,
             creator_id=message.from_user.id,
             creator_name=message.from_user.first_name,
-            title=f"Стрим #{session_id}"
+            title="Прямой эфир"
         )
         session.add_viewer(message.from_user.id, message.from_user.first_name)
         active_sessions[session_id] = session
         
+        # Создаем клавиатуру с кнопками управления
         markup = create_watch_markup(session_id, message.from_user.id)
         
+        # Формируем текст сообщения
         response_text = (
             f"🎉 Стрим создан!\n"
-            f"🎬 Название: {session.title}\n"
-            f"🔗 Ссылка: {message.text[:50]}...\n"
-            f"👑 Создатель: {session.creator_name}\n"
-            f"⏰ Время создания: {session.created_at}\n\n"
+            f"👤 Создатель: {session.creator_name}\n"
+            f"👥 Зрителей: {len(session.viewers)}\n\n"
             f"📨 Нажмите 'Пригласить друзей', чтобы позвать зрителей!"
         )
         
         bot.reply_to(message, response_text, reply_markup=markup)
     else:
-        bot.reply_to(message, "❌ Пожалуйста, отправьте корректную ссылку на видео")
+        # Проверяем, является ли сообщение командой присоединения к сессии
+        args = message.text.split()
+        if len(args) > 1 and args[1].startswith('join_'):
+            session_id = args[1].replace('join_', '')
+            if session_id in active_sessions:
+                session = active_sessions[session_id]
+                
+                # Добавляем зрителя в сессию
+                session.add_viewer(message.from_user.id, message.from_user.first_name)
+                
+                # Создаем веб-приложение с текущим временем потока
+                current_time = session.get_current_stream_time()
+                webapp = WebAppInfo(
+                    url=f"{WEBAPP_URL}?session={session_id}&url={quote(session.url)}&t={current_time}&st={session.start_timestamp}"
+                )
+                
+                # Создаем клавиатуру
+                markup = InlineKeyboardMarkup()
+                markup.add(InlineKeyboardButton(
+                    text="▶️ Открыть плеер",
+                    web_app=webapp
+                ))
+                
+                # Отправляем сообщение
+                response_text = (
+                    f"✅ Вы присоединились к просмотру!\n"
+                    f"👤 Создатель: {session.creator_name}\n"
+                    f"👥 Зрителей: {len(session.viewers)}"
+                )
+                bot.reply_to(message, response_text, reply_markup=markup)
+                
+                # Уведомляем создателя о новом зрителе
+                bot.send_message(
+                    session.creator_id,
+                    f"👋 Новый зритель присоединился!\n"
+                    f"👤 {message.from_user.first_name}"
+                )
+            else:
+                bot.reply_to(message, "❌ Сессия не найдена или устарела")
+        else:
+            bot.reply_to(message, "❌ Пожалуйста, отправьте корректную ссылку на видео")
 
 @bot.message_handler(content_types=['web_app_data'])
 def handle_webapp_data(message):

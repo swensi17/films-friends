@@ -120,6 +120,8 @@
         const urlParams = new URLSearchParams(window.location.search);
         session_id = urlParams.get('session');
         const videoUrl = decodeURIComponent(urlParams.get('url'));
+        const initialTime = parseFloat(urlParams.get('t')) || 0;
+        streamStartTimestamp = parseFloat(urlParams.get('st')) || (Date.now() / 1000);
 
         // Инициализация
         async function init() {
@@ -128,6 +130,14 @@
 
             if (videoUrl) {
                 videoPlayer.src = videoUrl;
+                
+                // Устанавливаем начальное время
+                videoPlayer.addEventListener('loadedmetadata', () => {
+                    videoPlayer.currentTime = initialTime;
+                    videoPlayer.play().catch(() => {
+                        // Игнорируем ошибку автовоспроизведения
+                    });
+                });
                 
                 // Автоматически включаем звук после первого взаимодействия
                 document.addEventListener('click', () => {
@@ -155,9 +165,6 @@
         // Обработка событий видео
         videoPlayer.addEventListener('loadeddata', () => {
             loading.style.display = 'none';
-            videoPlayer.play().catch(() => {
-                // Игнорируем ошибку автовоспроизведения
-            });
 
             // Уведомляем о присоединении
             tg.sendData(JSON.stringify({
@@ -173,16 +180,6 @@
                 
                 if (data.type === 'viewer_update') {
                     viewersCount.textContent = data.count || 0;
-                }
-                else if (data.type === 'stream_info') {
-                    streamStartTimestamp = data.start_timestamp;
-                    isActive = data.is_active;
-                    
-                    if (isActive) {
-                        const expectedTime = (Date.now() / 1000) - streamStartTimestamp;
-                        videoPlayer.currentTime = expectedTime;
-                        videoPlayer.play();
-                    }
                 }
                 else if (data.type === 'stream_ended') {
                     isActive = false;
