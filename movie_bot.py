@@ -11,7 +11,7 @@ bot = telebot.TeleBot('7366514318:AAFNSvdBe5L9RM27mY9OnBEwRIH2dmizUVs')
 active_sessions = {}
 
 # URL вашего веб-приложения (замените на реальный URL после деплоя)
-WEBAPP_URL = "https://your-domain.com/player.html"  # Замените на ваш домен после загрузки player.html
+WEBAPP_URL = "https://swensi17.github.io/films-friends/player.html"  # URL на GitHub Pages
 
 def create_main_markup():
     markup = InlineKeyboardMarkup()
