@@ -297,7 +297,7 @@
         </div>
 
         <div class="video-wrapper">
-            <video id="videoPlayer" class="video-player" controls>
+            <video id="player" class="video-player" controls>
                 <source id="videoSource" src="" type="video/mp4">
                 Ваш браузер не поддерживает видео.
             </video>
@@ -335,195 +335,127 @@
 
     <script>
         let tg = window.Telegram.WebApp;
-        tg.expand();
-
-        const urlParams = new URLSearchParams(window.location.search);
-        const videoUrl = urlParams.get('url');
-        const sessionId = urlParams.get('session');
-        const startTime = parseFloat(urlParams.get('t')) || 0;
-        
-        const videoPlayer = document.getElementById('videoPlayer');
-        const loading = document.getElementById('loading');
+        let player;
+        let session_id;
         let isCreator = false;
-
-        // Функция для показа уведомления о новом зрителе
-        function showViewerJoinNotification(viewerName) {
-            const notification = document.createElement('div');
-            notification.className = 'viewer-join-notification';
-            notification.innerHTML = `
-                👋 ${viewerName} присоединился к просмотру
-            `;
-            document.body.appendChild(notification);
-            setTimeout(() => {
-                notification.remove();
-            }, 3500);
-        }
-
-        // Функция обновления списка зрителей
-        function updateViewersList(viewers) {
-            const viewersList = document.getElementById('viewersList');
-            const viewersCount = document.getElementById('viewersCount');
-            
-            viewersList.innerHTML = viewers.map(viewer => `
-                <div class="viewer-item${viewer.id === tg.initDataUnsafe.user.id ? ' creator' : ''}">
-                    ${viewer.id === tg.initDataUnsafe.user.id ? '👑' : '👤'} ${viewer.name}
-                    <span style="opacity: 0.7">• присоединился в ${viewer.joined_at}</span>
-                </div>
-            `).join('');
-            
-            viewersCount.textContent = viewers.length;
-        }
+        
+        // Получаем параметры из URL
+        const urlParams = new URLSearchParams(window.location.search);
+        session_id = urlParams.get('session');
+        const videoUrl = decodeURIComponent(urlParams.get('url'));
+        const startTime = parseFloat(urlParams.get('t')) || 0;
 
         // Инициализация плеера
-        async function initializePlayer() {
-            if (videoUrl) {
-                try {
-                    loading.style.display = 'flex';
-                    videoPlayer.src = videoUrl;
-                    await videoPlayer.load();
-                    
-                    // Устанавливаем начальное время
-                    videoPlayer.currentTime = startTime;
-                    
-                    loading.style.display = 'none';
-                    
-                    // Уведомляем о присоединении
-                    tg.sendData(JSON.stringify({
-                        action: 'viewer_joined',
-                        session_id: sessionId
-                    }));
-                    
-                    // Если мы создатель, начинаем отправлять обновления времени
-                    if (isCreator) {
-                        setInterval(() => {
-                            if (!videoPlayer.paused) {
-                                tg.sendData(JSON.stringify({
-                                    action: 'update_time',
-                                    session_id: sessionId,
-                                    currentTime: videoPlayer.currentTime
-                                }));
-                            }
-                        }, 1000);
-                    }
-                    
-                    try {
-                        await videoPlayer.play();
-                    } catch (playError) {
-                        console.log('Автовоспроизведение заблокировано браузером');
-                    }
-                } catch (error) {
-                    console.error('Ошибка при загрузке видео:', error);
-                    alert('Ошибка при загрузке видео. Пожалуйста, проверьте ссылку.');
-                }
+        function initializePlayer() {
+            if (!videoUrl) {
+                document.getElementById('error').textContent = 'Ошибка: URL видео не найден';
+                document.getElementById('loading').style.display = 'none';
+                return;
             }
-        }
 
-        function syncTime() {
-            tg.sendData(JSON.stringify({
-                action: 'sync',
-                session_id: sessionId,
-                currentTime: videoPlayer.currentTime
-            }));
-        }
+            player = new Plyr('#player', {
+                controls: ['play', 'progress', 'current-time', 'mute', 'volume', 'fullscreen'],
+                resetOnEnd: true
+            });
 
-        function shareTime() {
-            const time = videoPlayer.currentTime;
-            const minutes = Math.floor(time / 60);
-            const seconds = Math.floor(time % 60);
-            tg.sendData(JSON.stringify({
-                action: 'share_time',
-                session_id: sessionId,
-                message: `🕐 Текущее время просмотра: ${minutes}:${seconds.toString().padStart(2, '0')}`
-            }));
-        }
+            const video = document.querySelector('video');
+            video.src = videoUrl;
 
-        function toggleFullscreen() {
-            if (!document.fullscreenElement) {
-                videoPlayer.requestFullscreen();
-            } else {
-                document.exitFullscreen();
-            }
-        }
-
-        function sendMessage() {
-            const input = document.getElementById('messageInput');
-            const message = input.value.trim();
-            
-            if (message) {
+            player.on('ready', () => {
+                document.getElementById('loading').style.display = 'none';
+                // Устанавливаем начальное время
+                player.currentTime = startTime;
+                
+                // Уведомляем о присоединении зрителя
                 tg.sendData(JSON.stringify({
-                    action: 'chat_message',
-                    session_id: sessionId,
-                    message: message
+                    action: 'viewer_joined',
+                    session_id: session_id
                 }));
-                
-                // Добавляем сообщение локально
-                addChatMessage({
-                    user: 'Вы',
-                    text: message,
-                    own: true
-                });
-                
-                input.value = '';
-            }
-        }
 
-        function addChatMessage(message) {
-            const chatMessages = document.getElementById('chatMessages');
-            const messageDiv = document.createElement('div');
-            messageDiv.className = `chat-message${message.own ? ' own' : ''}`;
-            messageDiv.textContent = `${message.user}: ${message.text}`;
-            chatMessages.appendChild(messageDiv);
-            chatMessages.scrollTop = chatMessages.scrollHeight;
-        }
+                // Начинаем периодическую синхронизацию времени
+                setInterval(syncTime, 5000);
+            });
 
-        // Обработка нажатия Enter в поле ввода
-        document.getElementById('messageInput').addEventListener('keypress', function(e) {
-            if (e.key === 'Enter') {
-                sendMessage();
-            }
-        });
-
-        // Обработка сообщений от бота
-        window.addEventListener('message', function(event) {
-            const data = JSON.parse(event.data);
-            
-            if (data.type === 'time_update' && !isCreator) {
-                videoPlayer.currentTime = data.time;
-                if (data.is_playing && videoPlayer.paused) {
-                    videoPlayer.play();
-                } else if (!data.is_playing && !videoPlayer.paused) {
-                    videoPlayer.pause();
+            // Обработка событий плеера
+            player.on('play', () => {
+                if (isCreator) {
+                    shareTime();
                 }
-            } else if (data.type === 'update_viewers') {
-                updateViewersList(data.viewers);
-            } else if (data.type === 'viewer_joined') {
-                showViewerJoinNotification(data.viewer_name);
-            } else if (data.type === 'new_message') {
-                addChatMessage(data.message);
+            });
+
+            player.on('pause', () => {
+                if (isCreator) {
+                    shareTime();
+                }
+            });
+
+            player.on('timeupdate', () => {
+                if (isCreator && player.playing) {
+                    shareTime();
+                }
+            });
+
+            // Блокируем управление для не-создателей
+            if (!isCreator) {
+                player.on('play', (event) => {
+                    event.preventDefault();
+                });
+                player.on('pause', (event) => {
+                    event.preventDefault();
+                });
+                player.on('seeking', (event) => {
+                    event.preventDefault();
+                });
+            }
+        }
+
+        // Обработка данных от бота
+        tg.onEvent('message', function(message) {
+            try {
+                const data = JSON.parse(message);
+                if (data.type === 'time_update') {
+                    player.currentTime = data.time;
+                    if (data.is_playing) {
+                        player.play();
+                    } else {
+                        player.pause();
+                    }
+                } else if (data.type === 'viewer_update') {
+                    updateViewersList(data.viewers);
+                }
+            } catch (e) {
+                console.error('Error parsing message:', e);
             }
         });
 
-        // Запрещаем управление плеером для не-создателей
-        videoPlayer.addEventListener('play', function() {
-            if (!isCreator) {
-                videoPlayer.pause();
+        // Функция синхронизации времени
+        function syncTime() {
+            if (isCreator) {
+                shareTime();
             }
-        });
+        }
 
-        videoPlayer.addEventListener('pause', function() {
-            if (!isCreator) {
-                videoPlayer.play();
-            }
-        });
-
-        videoPlayer.addEventListener('seeked', function() {
-            if (!isCreator) {
-                videoPlayer.currentTime = startTime;
-            }
-        });
+        // Отправка текущего времени боту
+        function shareTime() {
+            tg.sendData(JSON.stringify({
+                action: 'update_time',
+                session_id: session_id,
+                currentTime: player.currentTime,
+                is_playing: !player.paused
+            }));
+        }
 
         // Инициализация при загрузке страницы
-        window.addEventListener('load', initializePlayer);
+        window.addEventListener('load', () => {
+            tg.ready();
+            tg.expand();
+            
+            // Устанавливаем видео источник
+            const video = document.querySelector('video');
+            video.src = videoUrl;
+            
+            initializePlayer();
+        });
     </script>
 </body>
 </html>
