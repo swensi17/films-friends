@@ -72,6 +72,16 @@
             display: none;
         }
 
+        #error-message {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-size: 18px;
+            display: none;
+            color: red;
+        }
+
         @keyframes pulse {
             0% { transform: scale(1); }
             50% { transform: scale(1.2); }
@@ -123,6 +133,7 @@
     </div>
 
     <div id="loading">Загрузка...</div>
+    <div id="error-message"></div>
 
     <script>
         let player;
@@ -132,6 +143,8 @@
         let viewerCount = 0;
         let isStreamActive = true;
         let serverTimeDiff = 0;
+        let isPlaying = false;
+        let lastSyncTime = 0;
 
         // Получаем параметры из URL
         const urlParams = new URLSearchParams(window.location.search);
@@ -274,6 +287,37 @@
             };
             console.log('Sending to Telegram:', data);
             window.Telegram.WebApp.sendData(JSON.stringify(data));
+        }
+
+        function handleData(eventData) {
+            const data = JSON.parse(eventData);
+            
+            if (data.type === 'stream_ended') {
+                // Останавливаем плеер при завершении стрима
+                if (player) {
+                    player.pause();
+                }
+                // Показываем сообщение о завершении
+                document.getElementById('error-message').textContent = 'Трансляция завершена';
+                document.getElementById('error-message').style.display = 'block';
+                // Отключаем периодическую синхронизацию
+                isPlaying = false;
+                return;
+            }
+            
+            if (data.type === 'sync_time') {
+                // Вычисляем разницу между временем сервера и клиента
+                const localTime = Date.now() / 1000;
+                serverTimeDiff = data.server_time - localTime;
+                streamStartTime = data.stream_start_time;
+                
+                // Синхронизируем время
+                const currentTime = getCurrentStreamTime();
+                if (Math.abs(player.currentTime - currentTime) > 1) {
+                    console.log('Syncing to new time:', currentTime);
+                    player.currentTime = currentTime;
+                }
+            }
         }
 
         // Обработчики кнопок управления
