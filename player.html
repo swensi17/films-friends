@@ -113,13 +113,13 @@
         const loading = document.getElementById('loading');
         const viewersCount = document.getElementById('viewersCount');
         let session_id;
-        let lastUpdateTime = 0;
+        let streamStartTimestamp;
+        let isActive = true;
 
         // Получаем параметры из URL
         const urlParams = new URLSearchParams(window.location.search);
         session_id = urlParams.get('session');
         const videoUrl = decodeURIComponent(urlParams.get('url'));
-        const startTime = parseFloat(urlParams.get('t')) || 0;
 
         // Инициализация
         async function init() {
@@ -134,27 +134,27 @@
                     videoPlayer.muted = false;
                 }, { once: true });
 
-                // Начинаем отправлять обновления времени
-                setInterval(sendTimeUpdate, 2000);
+                // Запускаем проверку синхронизации
+                setInterval(checkSync, 1000);
             }
         }
 
-        // Отправка обновления времени
-        function sendTimeUpdate() {
-            if (videoPlayer.readyState === 4) { // HAVE_ENOUGH_DATA
-                tg.sendData(JSON.stringify({
-                    action: 'update_time',
-                    session_id: session_id,
-                    currentTime: videoPlayer.currentTime
-                }));
+        // Проверка и корректировка синхронизации
+        function checkSync() {
+            if (streamStartTimestamp && isActive) {
+                const expectedTime = (Date.now() / 1000) - streamStartTimestamp;
+                const currentTime = videoPlayer.currentTime;
+                
+                // Если разница больше 1 секунды, корректируем
+                if (Math.abs(currentTime - expectedTime) > 1) {
+                    videoPlayer.currentTime = expectedTime;
+                }
             }
         }
 
         // Обработка событий видео
         videoPlayer.addEventListener('loadeddata', () => {
             loading.style.display = 'none';
-            // Устанавливаем начальное время
-            videoPlayer.currentTime = startTime;
             videoPlayer.play().catch(() => {
                 // Игнорируем ошибку автовоспроизведения
             });
@@ -172,20 +172,20 @@
                 const data = JSON.parse(message);
                 
                 if (data.type === 'viewer_update') {
-                    // Обновляем счетчик зрителей
                     viewersCount.textContent = data.count || 0;
                 }
-                else if (data.type === 'sync_time') {
-                    // Проверяем, что прошло достаточно времени с последнего обновления
-                    const now = Date.now();
-                    if (now - lastUpdateTime > 1000) { // Минимум 1 секунда между обновлениями
-                        const newTime = data.time;
-                        // Проверяем, что разница во времени существенная
-                        if (Math.abs(videoPlayer.currentTime - newTime) > 1) {
-                            videoPlayer.currentTime = newTime;
-                        }
-                        lastUpdateTime = now;
+                else if (data.type === 'stream_info') {
+                    streamStartTimestamp = data.start_timestamp;
+                    isActive = data.is_active;
+                    
+                    if (isActive) {
+                        const expectedTime = (Date.now() / 1000) - streamStartTimestamp;
+                        videoPlayer.currentTime = expectedTime;
+                        videoPlayer.play();
                     }
+                }
+                else if (data.type === 'stream_ended') {
+                    isActive = false;
                 }
             } catch (e) {
                 console.error('Error parsing message:', e);
