@@ -96,7 +96,7 @@
             <div class="live-dot"></div>
             LIVE
         </div>
-        <div class="viewers-count">👥 <span id="viewersCount">0</span></div>
+        <div class="viewers-count">👥 <span id="viewerCount">0</span></div>
     </div>
 
     <div class="video-container">
@@ -108,89 +108,104 @@
     </div>
 
     <script>
-        const tg = window.Telegram.WebApp;
-        const videoPlayer = document.getElementById('videoPlayer');
-        const loading = document.getElementById('loading');
-        const viewersCount = document.getElementById('viewersCount');
-        let session_id;
-        let streamStartTimestamp;
-        let isActive = true;
+        let player;
+        let sessionId;
+        let startTimestamp;
+        let isCreator = false;
+        let lastSyncTime = 0;
+        let viewerCount = 0;
 
         // Получаем параметры из URL
         const urlParams = new URLSearchParams(window.location.search);
-        session_id = urlParams.get('session');
-        const videoUrl = decodeURIComponent(urlParams.get('url'));
+        const videoUrl = urlParams.get('url');
+        sessionId = urlParams.get('session');
+        startTimestamp = parseFloat(urlParams.get('st'));
         const initialTime = parseFloat(urlParams.get('t')) || 0;
-        streamStartTimestamp = parseFloat(urlParams.get('st')) || (Date.now() / 1000);
 
-        // Инициализация
-        async function init() {
-            tg.ready();
-            tg.expand();
+        // Инициализация плеера
+        window.onload = function() {
+            player = document.getElementById('videoPlayer');
+            player.src = videoUrl;
 
-            if (videoUrl) {
-                videoPlayer.src = videoUrl;
-                
-                // Устанавливаем начальное время
-                videoPlayer.addEventListener('loadedmetadata', () => {
-                    videoPlayer.currentTime = initialTime;
-                    videoPlayer.play().catch(() => {
-                        // Игнорируем ошибку автовоспроизведения
+            // Устанавливаем начальное время после загрузки метаданных
+            player.addEventListener('loadedmetadata', function() {
+                console.log('Video metadata loaded, setting initial time:', initialTime);
+                player.currentTime = initialTime;
+                notifyTelegram('viewer_joined');
+            });
+
+            // Обработка сообщений от бота
+            window.Telegram.WebApp.onEvent('message', function(message) {
+                try {
+                    console.log('Received message:', message);
+                    const data = JSON.parse(message);
+                    
+                    if (data.type === 'viewer_update') {
+                        console.log('Viewer update received:', data.count);
+                        viewerCount = data.count || 0;
+                        updateViewerCount();
+                    }
+                    else if (data.type === 'sync_time') {
+                        const newTime = parseFloat(data.time);
+                        console.log('Time sync received:', newTime, 'current:', player.currentTime);
+                        if (Math.abs(player.currentTime - newTime) > 1) {
+                            player.currentTime = newTime;
+                        }
+                    }
+                } catch (e) {
+                    console.error('Error processing message:', e);
+                }
+            });
+
+            // Синхронизация времени каждую секунду
+            setInterval(function() {
+                if (isCreator) {
+                    notifyTelegram('update_time', {
+                        currentTime: player.currentTime
                     });
-                });
-                
-                // Автоматически включаем звук после первого взаимодействия
-                document.addEventListener('click', () => {
-                    videoPlayer.muted = false;
-                }, { once: true });
+                }
+            }, 1000);
 
-                // Запускаем проверку синхронизации
-                setInterval(checkSync, 1000);
+            // Обновляем счетчик зрителей при запуске
+            updateViewerCount();
+        };
+
+        function updateViewerCount() {
+            const viewerElement = document.getElementById('viewerCount');
+            if (viewerElement) {
+                viewerElement.textContent = viewerCount;
+                console.log('Updated viewer count display:', viewerCount);
+            } else {
+                console.error('Viewer count element not found');
             }
         }
 
-        // Проверка и корректировка синхронизации
-        function checkSync() {
-            if (streamStartTimestamp && isActive) {
-                const expectedTime = (Date.now() / 1000) - streamStartTimestamp;
-                const currentTime = videoPlayer.currentTime;
-                
-                // Если разница больше 1 секунды, корректируем
-                if (Math.abs(currentTime - expectedTime) > 1) {
-                    videoPlayer.currentTime = expectedTime;
-                }
+        function notifyTelegram(action, extraData = {}) {
+            const data = {
+                session_id: sessionId,
+                action: action,
+                ...extraData
+            };
+            console.log('Sending to Telegram:', data);
+            window.Telegram.WebApp.sendData(JSON.stringify(data));
+        }
+
+        // Обработчики кнопок управления
+        function playVideo() {
+            if (player.paused) {
+                player.play();
+            } else {
+                player.pause();
             }
         }
 
-        // Обработка событий видео
-        videoPlayer.addEventListener('loadeddata', () => {
-            loading.style.display = 'none';
+        function seekBackward() {
+            player.currentTime = Math.max(0, player.currentTime - 10);
+        }
 
-            // Уведомляем о присоединении
-            tg.sendData(JSON.stringify({
-                action: 'viewer_joined',
-                session_id: session_id
-            }));
-        });
-
-        // Обработка сообщений от бота
-        tg.onEvent('message', function(message) {
-            try {
-                const data = JSON.parse(message);
-                
-                if (data.type === 'viewer_update') {
-                    viewersCount.textContent = data.count || 0;
-                }
-                else if (data.type === 'stream_ended') {
-                    isActive = false;
-                }
-            } catch (e) {
-                console.error('Error parsing message:', e);
-            }
-        });
-
-        // Запуск
-        init();
+        function seekForward() {
+            player.currentTime = Math.min(player.duration, player.currentTime + 10);
+        }
     </script>
 </body>
 </html>
