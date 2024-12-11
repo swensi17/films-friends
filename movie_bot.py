@@ -7,9 +7,13 @@ from urllib.parse import quote
 import uuid
 import time
 from telebot import types
+from dotenv import load_dotenv
+
+# Загружаем переменные окружения
+load_dotenv()
 
 # Инициализация бота
-bot = telebot.TeleBot('7366514318:AAFNSvdBe5L9RM27mY9OnBEwRIH2dmizUVs')
+bot = telebot.TeleBot(os.getenv('BOT_TOKEN'))
 
 # Хранение активных сессий просмотра
 active_sessions = {}
@@ -119,7 +123,7 @@ def create_watch_markup(session_id, user_id):
     return markup
 
 # URL вашего веб-приложения
-WEBAPP_URL = "https://swensi17.github.io/films-friends/player.html"
+WEBAPP_URL = os.getenv('WEBAPP_URL')
 
 def broadcast_viewer_count(session_id):
     """Отправляет всем зрителям обновленное количество зрителей"""
