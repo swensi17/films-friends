@@ -125,7 +125,7 @@
             <div class="live-dot"></div>
             LIVE
         </div>
-        <div class="viewers-count">👥 <span id="viewerCount">0</span></div>
+        <div class="viewers-count">👥 <span id="viewer-count">0</span></div>
     </div>
 
     <div class="video-container">
@@ -137,212 +137,117 @@
 
     <script>
         let player;
-        let sessionId;
         let streamStartTime;
-        let isCreator = false;
+        let currentStreamTime = 0;
         let viewerCount = 0;
         let isStreamActive = true;
         let serverTimeDiff = 0;
-        let isPlaying = false;
-        let lastSyncTime = 0;
+        let isInitialSync = true;
 
         // Получаем параметры из URL
         const urlParams = new URLSearchParams(window.location.search);
-        const videoUrl = decodeURIComponent(urlParams.get('url'));
-        sessionId = urlParams.get('session');
+        const videoUrl = urlParams.get('url');
+        const sessionId = urlParams.get('session');
         streamStartTime = parseFloat(urlParams.get('st'));
 
-        // Инициализация Telegram WebApp
-        window.Telegram.WebApp.ready();
-        window.Telegram.WebApp.expand();
-
-        // Обработка закрытия окна
-        window.addEventListener('beforeunload', function() {
-            if (sessionId) {
-                notifyTelegram('viewer_left');
-            }
-        });
-
-        // Функция для получения текущего времени стрима
         function getCurrentStreamTime() {
             const localTime = Date.now() / 1000;
-            return Math.max(0, localTime - streamStartTime + serverTimeDiff);
+            return localTime - streamStartTime + serverTimeDiff;
         }
 
-        // Инициализация плеера
-        window.onload = function() {
-            const loading = document.getElementById('loading');
-            player = document.getElementById('videoPlayer');
-            
-            loading.style.display = 'block';
-            
-            player.src = videoUrl;
+        function updateViewerCount(count) {
+            viewerCount = count;
+            const countElement = document.getElementById('viewer-count');
+            if (countElement) {
+                countElement.textContent = count;
+            }
+        }
 
-            // Устанавливаем начальное время после загрузки метаданных
-            player.addEventListener('loadedmetadata', function() {
-                console.log('Video metadata loaded');
-                const currentTime = getCurrentStreamTime();
-                console.log('Setting initial stream time:', currentTime);
-                player.currentTime = currentTime;
-                loading.style.display = 'none';
-                notifyTelegram('viewer_joined');
+        function initPlayer() {
+            if (Hls.isSupported()) {
+                player = new Hls();
+                player.loadSource(videoUrl);
+                player.attachMedia(document.getElementById('videoPlayer'));
 
-                // Запускаем периодическую синхронизацию
-                setInterval(function() {
-                    if (isStreamActive) {
-                        const streamTime = getCurrentStreamTime();
-                        if (Math.abs(player.currentTime - streamTime) > 1) {
-                            console.log('Syncing time:', streamTime);
-                            player.currentTime = streamTime;
-                        }
-                    }
-                }, 1000);
-            });
-
-            // Обработка ошибок загрузки видео
-            player.addEventListener('error', function() {
-                loading.textContent = 'Ошибка загрузки видео';
-                loading.style.color = 'red';
-            });
-
-            // Обработка сообщений от бота
-            window.Telegram.WebApp.onEvent('message', function(message) {
-                try {
-                    console.log('Received message:', message);
-                    const data = JSON.parse(message);
+                player.on(Hls.Events.MANIFEST_PARSED, function() {
+                    document.getElementById('loading').style.display = 'none';
                     
-                    if (data.type === 'viewer_update') {
-                        console.log('Viewer update received:', data.count);
-                        viewerCount = data.count || 0;
-                        updateViewerCount();
-                    }
-                    else if (data.type === 'sync_time') {
-                        console.log('Time sync received:', data);
-                        // Вычисляем разницу между временем сервера и клиента
-                        const localTime = Date.now() / 1000;
-                        serverTimeDiff = data.server_time - localTime;
-                        streamStartTime = data.stream_start_time;
-                        
-                        // Синхронизируем время
-                        const currentTime = getCurrentStreamTime();
-                        if (Math.abs(player.currentTime - currentTime) > 1) {
-                            console.log('Syncing to new time:', currentTime);
-                            player.currentTime = currentTime;
+                    // Устанавливаем начальное время при первой загрузке
+                    const initialTime = getCurrentStreamTime();
+                    console.log('Initial stream time:', initialTime);
+                    document.getElementById('videoPlayer').currentTime = initialTime;
+
+                    // Запускаем периодическую синхронизацию
+                    setInterval(() => {
+                        if (isStreamActive) {
+                            const targetTime = getCurrentStreamTime();
+                            // Синхронизируем только если разница больше 2 секунд
+                            if (Math.abs(document.getElementById('videoPlayer').currentTime - targetTime) > 2) {
+                                console.log('Syncing time:', targetTime);
+                                document.getElementById('videoPlayer').currentTime = targetTime;
+                            }
                         }
+                    }, 1000);
+
+                    document.getElementById('videoPlayer').play().catch(function(error) {
+                        console.log("Play failed:", error);
+                    });
+                });
+
+                player.on(Hls.Events.ERROR, function(event, data) {
+                    if (data.fatal) {
+                        document.getElementById('error-message').textContent = 'Ошибка загрузки видео';
+                        document.getElementById('error-message').style.display = 'block';
                     }
-                    else if (data.type === 'stream_ended') {
-                        console.log('Stream ended');
-                        isStreamActive = false;
-                        player.pause();
-                        showEndMessage();
-                    }
-                } catch (e) {
-                    console.error('Error processing message:', e);
-                }
-            });
-
-            // Проверка активности каждые 30 секунд
-            setInterval(function() {
-                if (isStreamActive) {
-                    notifyTelegram('viewer_active');
-                }
-            }, 30000);
-
-            // Обновляем счетчик зрителей при запуске
-            updateViewerCount();
-        };
-
-        function showEndMessage() {
-            // Удаляем предыдущее сообщение если есть
-            const oldMessage = document.querySelector('.stream-end-message');
-            if (oldMessage) {
-                oldMessage.remove();
+                });
             }
-
-            const endMessage = document.createElement('div');
-            endMessage.className = 'stream-end-message';
-            endMessage.innerHTML = `
-                <div class="title">🛑 Трансляция завершена</div>
-                <div class="message">Создатель завершил трансляцию</div>
-                <div class="action">Создайте новую комнату для просмотра</div>
-            `;
-            document.body.appendChild(endMessage);
-        }
-
-        function updateViewerCount() {
-            const viewerElement = document.getElementById('viewerCount');
-            if (viewerElement) {
-                viewerElement.textContent = viewerCount;
-                console.log('Updated viewer count display:', viewerCount);
-            } else {
-                console.error('Viewer count element not found');
-            }
-        }
-
-        function notifyTelegram(action, extraData = {}) {
-            const data = {
-                session_id: sessionId,
-                action: action,
-                ...extraData
-            };
-            console.log('Sending to Telegram:', data);
-            window.Telegram.WebApp.sendData(JSON.stringify(data));
         }
 
         function handleData(eventData) {
             const data = JSON.parse(eventData);
+            console.log('Received data:', data);
             
-            if (data.type === 'stream_ended') {
-                // Останавливаем плеер при завершении стрима
+            if (data.type === 'viewer_update') {
+                updateViewerCount(data.count);
+            } else if (data.type === 'stream_ended') {
                 if (player) {
-                    player.pause();
+                    player.destroy();
                 }
-                // Показываем сообщение о завершении
+                isStreamActive = false;
                 document.getElementById('error-message').textContent = 'Трансляция завершена';
                 document.getElementById('error-message').style.display = 'block';
-                // Отключаем периодическую синхронизацию
-                isPlaying = false;
-                return;
-            }
-            
-            if (data.type === 'sync_time') {
-                // Вычисляем разницу между временем сервера и клиента
+            } else if (data.type === 'sync_time') {
                 const localTime = Date.now() / 1000;
                 serverTimeDiff = data.server_time - localTime;
-                streamStartTime = data.stream_start_time;
                 
-                // Синхронизируем время
-                const currentTime = getCurrentStreamTime();
-                if (Math.abs(player.currentTime - currentTime) > 1) {
-                    console.log('Syncing to new time:', currentTime);
-                    player.currentTime = currentTime;
+                if (isInitialSync) {
+                    const targetTime = getCurrentStreamTime();
+                    document.getElementById('videoPlayer').currentTime = targetTime;
+                    isInitialSync = false;
                 }
             }
         }
 
-        // Обработчики кнопок управления
-        function playVideo() {
-            if (!isStreamActive) {
-                return; // Блокируем воспроизведение если поток завершен
-            }
-            if (player.paused) {
-                player.play();
-            } else {
-                player.pause();
-            }
-        }
+        // Инициализация при загрузке страницы
+        window.addEventListener('load', function() {
+            initPlayer();
+            
+            // Сообщаем о присоединении зрителя
+            window.Telegram.WebApp.sendData(JSON.stringify({
+                type: 'viewer_joined',
+                session_id: sessionId
+            }));
 
-        function seekBackward() {
-            if (!isStreamActive) return;
-            const newTime = getCurrentStreamTime() - 10;
-            player.currentTime = Math.max(0, newTime);
-        }
-
-        function seekForward() {
-            if (!isStreamActive) return;
-            const newTime = getCurrentStreamTime() + 10;
-            player.currentTime = Math.min(player.duration, newTime);
-        }
+            // Периодически сообщаем о активности
+            setInterval(() => {
+                if (isStreamActive) {
+                    window.Telegram.WebApp.sendData(JSON.stringify({
+                        type: 'viewer_active',
+                        session_id: sessionId
+                    }));
+                }
+            }, 5000);
+        });
     </script>
 </body>
 </html>

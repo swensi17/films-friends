@@ -117,17 +117,21 @@ WEBAPP_URL = "https://swensi17.github.io/films-friends/player.html"
 
 def broadcast_viewer_count(session_id):
     """Отправляет всем зрителям обновленное количество зрителей"""
-    if session_id in active_sessions:
-        session = active_sessions[session_id]
-        update_message = json.dumps({
+    session = active_sessions[session_id]
+    try:
+        viewer_count = len(session.viewers)
+        sync_message = json.dumps({
             'type': 'viewer_update',
-            'count': len(session.viewers)
+            'count': viewer_count
         })
+        
         for viewer_id in session.viewers:
             try:
-                bot.send_message(viewer_id, update_message)
+                bot.send_data(viewer_id, sync_message)
             except Exception as e:
                 print(f"Error sending viewer update to {viewer_id}: {e}")
+    except Exception as e:
+        print(f"Error broadcasting viewer count: {e}")
 
 def broadcast_stream_end(session_id):
     """Отправляет всем зрителям сообщение о завершении стрима"""
@@ -386,35 +390,25 @@ def handle_webapp_data(message):
     try:
         data = json.loads(message.web_app_data.data)
         session_id = data.get('session_id')
-        action = data.get('action')
         
-        if session_id in active_sessions:
-            session = active_sessions[session_id]
-            
-            if action == 'viewer_joined':
-                if session.add_viewer(message.from_user.id, message.from_user.first_name):
-                    broadcast_viewer_count(session_id)
-                    
-                    # Отправляем текущее время всем зрителям для синхронизации
-                    sync_message = json.dumps({
-                        'type': 'sync_time',
-                        'stream_start_time': session.stream_start_time,
-                        'server_time': time.time()
-                    })
-                    
-                    for viewer_id in session.viewers:
-                        try:
-                            bot.send_message(viewer_id, sync_message)
-                        except Exception as e:
-                            print(f"Error sending sync message: {e}")
-            
-            elif action == 'viewer_left':
-                session.remove_viewer(message.from_user.id)
+        if not session_id or session_id not in active_sessions:
+            return
+        
+        session = active_sessions[session_id]
+        
+        if data.get('type') == 'viewer_joined':
+            if session.add_viewer(message.from_user.id, message.from_user.first_name):
                 broadcast_viewer_count(session_id)
-            
-            elif action == 'viewer_active':
-                if message.from_user.id in session.viewers:
-                    session.viewers[message.from_user.id]['last_active'] = time.time()
+        
+        elif data.get('type') == 'viewer_left':
+            if message.from_user.id in session.viewers:
+                del session.viewers[message.from_user.id]
+                broadcast_viewer_count(session_id)
+        
+        elif data.get('type') == 'viewer_active':
+            if message.from_user.id in session.viewers:
+                session.viewers[message.from_user.id]['last_active'] = time.time()
+                broadcast_viewer_count(session_id)
     
     except Exception as e:
         print(f"Error handling webapp data: {e}")
