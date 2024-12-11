@@ -20,8 +20,7 @@ class StreamSession:
         self.title = title
         self.created_at = datetime.now().strftime("%H:%M:%S")
         self.viewers = {}  # {user_id: {'name': name, 'joined_at': time, 'last_active': time}}
-        self.current_time = 0
-        self.start_timestamp = datetime.now().timestamp()
+        self.stream_start_time = datetime.now().timestamp()  # Время начала трансляции
         self.is_active = True
 
     def add_viewer(self, user_id, user_name):
@@ -43,28 +42,20 @@ class StreamSession:
     def get_current_stream_time(self):
         """Возвращает текущее время потока"""
         if not self.is_active:
-            return self.current_time
-        elapsed = datetime.now().timestamp() - self.start_timestamp
-        return elapsed
+            return 0
+        return datetime.now().timestamp() - self.stream_start_time
 
     def get_viewers_info(self):
         """Возвращает информацию о зрителях"""
         return [{'id': uid, 'name': info['name'], 'joined_at': info['joined_at']} 
                 for uid, info in self.viewers.items()]
 
-    def update_time(self, time):
-        """Обновляет текущее время потока"""
-        self.current_time = float(time)
-
     def end_stream(self):
         """Завершает поток"""
         self.is_active = False
-        self.current_time = self.get_current_stream_time()
-        # Отправляем сообщение о завершении всем зрителям
-        end_message = json.dumps({
+        return json.dumps({
             'type': 'stream_ended'
         })
-        return end_message
 
 def create_invite_link(session_id):
     """Создает пригласительную ссылку для сессии"""
@@ -83,25 +74,26 @@ def create_main_markup():
 
 def create_watch_markup(session_id, user_id):
     """Создает клавиатуру для просмотра"""
+    session = active_sessions[session_id]
+    current_time = session.get_current_stream_time()
+    
+    webapp = WebAppInfo(
+        url=f"{WEBAPP_URL}?session={session_id}&url={quote(session.url)}&st={session.stream_start_time}"
+    )
+    
     markup = InlineKeyboardMarkup()
-    session = active_sessions.get(session_id)
-    if session:
-        webapp = WebAppInfo(url=f"{WEBAPP_URL}?session={session_id}&url={quote(session.url)}&t={session.current_time}")
+    markup.add(InlineKeyboardButton(
+        text="▶️ Открыть плеер",
+        web_app=webapp
+    ))
+    
+    # Добавляем кнопку завершения только для создателя
+    if user_id == session.creator_id:
         markup.add(InlineKeyboardButton(
-            text="▶️ Открыть плеер",
-            web_app=webapp
+            text="🛑 Завершить трансляцию",
+            callback_data=f"end_stream_{session_id}"
         ))
-        markup.add(
-            InlineKeyboardButton("📨 Пригласить друзей", callback_data=f"invite_{session_id}"),
-            InlineKeyboardButton("💬 Чат просмотра", callback_data=f"chat_{session_id}")
-        )
-        # Добавляем кнопки управления только для создателя
-        if session.creator_id == user_id:
-            markup.add(
-                InlineKeyboardButton("⏯️ Пауза/Продолжить", callback_data=f"toggle_play_{session_id}"),
-                InlineKeyboardButton("🔄 Перезапустить", callback_data=f"restart_{session_id}"),
-                InlineKeyboardButton("🛑️ Завершить поток", callback_data=f"end_stream_{session_id}")
-            )
+    
     return markup
 
 # URL вашего веб-приложения
@@ -132,7 +124,7 @@ def send_welcome(message):
             if session.add_viewer(message.from_user.id, message.from_user.first_name):
                 current_time = session.get_current_stream_time()
                 webapp = WebAppInfo(
-                    url=f"{WEBAPP_URL}?session={session_id}&url={quote(session.url)}&t={current_time}&st={session.start_timestamp}"
+                    url=f"{WEBAPP_URL}?session={session_id}&url={quote(session.url)}&st={session.stream_start_time}"
                 )
                 
                 markup = InlineKeyboardMarkup()
@@ -225,35 +217,6 @@ def handle_callback(call):
             else:
                 bot.send_message(call.message.chat.id, "❌ Вы уже присоединились к этой сессии")
 
-    elif call.data.startswith("toggle_play_"):
-        session_id = call.data.split("_")[2]
-        if session_id in active_sessions:
-            session = active_sessions[session_id]
-            if call.from_user.id == session.creator_id:
-                session.is_active = not session.is_active
-                status = "▶️ Воспроизведение" if session.is_active else "⏸️ Пауза"
-                # Уведомляем всех зрителей
-                for viewer_id in session.viewers:
-                    bot.send_message(
-                        viewer_id,
-                        f"{status}\n👑 {session.creator_name} {('запустил' if session.is_active else 'поставил на паузу')} видео"
-                    )
-    
-    elif call.data.startswith("restart_"):
-        session_id = call.data.split("_")[1]
-        if session_id in active_sessions:
-            session = active_sessions[session_id]
-            if call.from_user.id == session.creator_id:
-                session.start_timestamp = datetime.now().timestamp()
-                session.is_active = True
-                # Уведомляем всех зрителей
-                for viewer_id in session.viewers:
-                    if viewer_id != session.creator_id:
-                        bot.send_message(
-                            viewer_id,
-                            "🔄 Создатель перезапустил видео с начала"
-                        )
-
     elif call.data.startswith("end_stream_"):
         session_id = call.data.split("_")[2]
         if session_id in active_sessions:
@@ -321,46 +284,26 @@ def handle_webapp_data(message):
                 if session.add_viewer(message.from_user.id, message.from_user.first_name):
                     broadcast_viewer_count(session_id)
                     
-                    # Отправляем текущее время новому зрителю
-                    try:
-                        bot.send_message(
-                            message.from_user.id,
-                            json.dumps({
-                                'type': 'sync_time',
-                                'time': session.get_current_stream_time(),
-                                'start_timestamp': session.start_timestamp
-                            })
-                        )
-                    except Exception as e:
-                        print(f"Error sending time sync: {e}")
+                    # Отправляем текущее время всем зрителям для синхронизации
+                    sync_message = json.dumps({
+                        'type': 'sync_time',
+                        'stream_start_time': session.stream_start_time,
+                        'server_time': datetime.now().timestamp()
+                    })
+                    
+                    for viewer_id in session.viewers:
+                        try:
+                            bot.send_message(viewer_id, sync_message)
+                        except Exception as e:
+                            print(f"Error sending sync message: {e}")
             
             elif action == 'viewer_left':
                 session.remove_viewer(message.from_user.id)
                 broadcast_viewer_count(session_id)
             
             elif action == 'viewer_active':
-                # Обновляем активность зрителя
                 if message.from_user.id in session.viewers:
                     session.viewers[message.from_user.id]['last_active'] = datetime.now().timestamp()
-            
-            elif action == 'update_time' and message.from_user.id == session.creator_id:
-                current_time = float(data.get('currentTime', 0))
-                session.update_time(current_time)
-                
-                # Отправляем обновление времени всем зрителям
-                for viewer_id in session.viewers:
-                    if viewer_id != session.creator_id:
-                        try:
-                            bot.send_message(
-                                viewer_id,
-                                json.dumps({
-                                    'type': 'sync_time',
-                                    'time': current_time,
-                                    'start_timestamp': session.start_timestamp
-                                })
-                            )
-                        except Exception as e:
-                            print(f"Error sending time update: {e}")
     
     except Exception as e:
         print(f"Error handling webapp data: {e}")

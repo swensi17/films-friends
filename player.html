@@ -127,18 +127,17 @@
     <script>
         let player;
         let sessionId;
-        let startTimestamp;
+        let streamStartTime;
         let isCreator = false;
-        let lastSyncTime = 0;
         let viewerCount = 0;
         let isStreamActive = true;
+        let serverTimeDiff = 0;
 
         // Получаем параметры из URL
         const urlParams = new URLSearchParams(window.location.search);
         const videoUrl = decodeURIComponent(urlParams.get('url'));
         sessionId = urlParams.get('session');
-        startTimestamp = parseFloat(urlParams.get('st'));
-        const initialTime = parseFloat(urlParams.get('t')) || 0;
+        streamStartTime = parseFloat(urlParams.get('st'));
 
         // Инициализация Telegram WebApp
         window.Telegram.WebApp.ready();
@@ -151,6 +150,12 @@
             }
         });
 
+        // Функция для получения текущего времени стрима
+        function getCurrentStreamTime() {
+            const localTime = Date.now() / 1000;
+            return Math.max(0, localTime - streamStartTime + serverTimeDiff);
+        }
+
         // Инициализация плеера
         window.onload = function() {
             const loading = document.getElementById('loading');
@@ -162,10 +167,23 @@
 
             // Устанавливаем начальное время после загрузки метаданных
             player.addEventListener('loadedmetadata', function() {
-                console.log('Video metadata loaded, setting initial time:', initialTime);
-                player.currentTime = initialTime;
+                console.log('Video metadata loaded');
+                const currentTime = getCurrentStreamTime();
+                console.log('Setting initial stream time:', currentTime);
+                player.currentTime = currentTime;
                 loading.style.display = 'none';
                 notifyTelegram('viewer_joined');
+
+                // Запускаем периодическую синхронизацию
+                setInterval(function() {
+                    if (isStreamActive) {
+                        const streamTime = getCurrentStreamTime();
+                        if (Math.abs(player.currentTime - streamTime) > 1) {
+                            console.log('Syncing time:', streamTime);
+                            player.currentTime = streamTime;
+                        }
+                    }
+                }, 1000);
             });
 
             // Обработка ошибок загрузки видео
@@ -186,10 +204,17 @@
                         updateViewerCount();
                     }
                     else if (data.type === 'sync_time') {
-                        const newTime = parseFloat(data.time);
-                        console.log('Time sync received:', newTime, 'current:', player.currentTime);
-                        if (Math.abs(player.currentTime - newTime) > 1) {
-                            player.currentTime = newTime;
+                        console.log('Time sync received:', data);
+                        // Вычисляем разницу между временем сервера и клиента
+                        const localTime = Date.now() / 1000;
+                        serverTimeDiff = data.server_time - localTime;
+                        streamStartTime = data.stream_start_time;
+                        
+                        // Синхронизируем время
+                        const currentTime = getCurrentStreamTime();
+                        if (Math.abs(player.currentTime - currentTime) > 1) {
+                            console.log('Syncing to new time:', currentTime);
+                            player.currentTime = currentTime;
                         }
                     }
                     else if (data.type === 'stream_ended') {
@@ -202,15 +227,6 @@
                     console.error('Error processing message:', e);
                 }
             });
-
-            // Синхронизация времени каждую секунду
-            setInterval(function() {
-                if (isCreator && isStreamActive) {
-                    notifyTelegram('update_time', {
-                        currentTime: player.currentTime
-                    });
-                }
-            }, 1000);
 
             // Проверка активности каждые 30 секунд
             setInterval(function() {
@@ -274,12 +290,14 @@
 
         function seekBackward() {
             if (!isStreamActive) return;
-            player.currentTime = Math.max(0, player.currentTime - 10);
+            const newTime = getCurrentStreamTime() - 10;
+            player.currentTime = Math.max(0, newTime);
         }
 
         function seekForward() {
             if (!isStreamActive) return;
-            player.currentTime = Math.min(player.duration, player.currentTime + 10);
+            const newTime = getCurrentStreamTime() + 10;
+            player.currentTime = Math.min(player.duration, newTime);
         }
     </script>
 </body>
