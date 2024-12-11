@@ -133,7 +133,11 @@ def broadcast_viewer_count(session_id):
         
         for viewer_id in session.viewers:
             try:
-                bot.send_data(viewer_id, sync_message)
+                bot.send_message(
+                    viewer_id,
+                    sync_message,
+                    parse_mode='HTML'
+                )
             except Exception as e:
                 print(f"Error sending viewer update to {viewer_id}: {e}")
     except Exception as e:
@@ -153,7 +157,11 @@ def broadcast_stream_end(session_id):
                     viewer_id,
                     "⚠️ Трансляция завершена!"
                 )
-                bot.send_data(viewer_id, sync_message)
+                bot.send_message(
+                    viewer_id,
+                    sync_message,
+                    parse_mode='HTML'
+                )
             except Exception:
                 pass
     except Exception as e:
@@ -393,6 +401,7 @@ def handle_messages(message):
 
 @bot.message_handler(content_types=['web_app_data'])
 def handle_webapp_data(message):
+    """Обработка данных от веб-приложения"""
     try:
         data = json.loads(message.web_app_data.data)
         session_id = data.get('session_id')
@@ -405,6 +414,17 @@ def handle_webapp_data(message):
         if data.get('type') == 'viewer_joined':
             if session.add_viewer(message.from_user.id, message.from_user.first_name):
                 broadcast_viewer_count(session_id)
+                # Отправляем время синхронизации
+                sync_message = json.dumps({
+                    'type': 'sync_time',
+                    'server_time': time.time(),
+                    'stream_start_time': session.stream_start_time
+                })
+                bot.send_message(
+                    message.from_user.id,
+                    sync_message,
+                    parse_mode='HTML'
+                )
         
         elif data.get('type') == 'viewer_left':
             if message.from_user.id in session.viewers:

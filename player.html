@@ -234,6 +234,16 @@
             }
         }
 
+        // Обработчик сообщений от Telegram
+        window.Telegram.WebApp.onEvent('message', function(message) {
+            try {
+                const data = JSON.parse(message);
+                handleData(JSON.stringify(data));
+            } catch (e) {
+                console.error('Error processing message:', e);
+            }
+        });
+
         // Инициализация при загрузке страницы
         window.addEventListener('load', function() {
             // Инициализируем Telegram WebApp
