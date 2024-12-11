@@ -55,6 +55,16 @@ class StreamSession:
         """Обновляет текущее время потока"""
         self.current_time = float(time)
 
+    def end_stream(self):
+        """Завершает поток"""
+        self.is_active = False
+        self.current_time = self.get_current_stream_time()
+        # Отправляем сообщение о завершении всем зрителям
+        end_message = json.dumps({
+            'type': 'stream_ended'
+        })
+        return end_message
+
 def create_invite_link(session_id):
     """Создает пригласительную ссылку для сессии"""
     return f"https://t.me/swensaiii_bot?start=join_{session_id}"
@@ -248,12 +258,12 @@ def handle_callback(call):
         if session_id in active_sessions:
             session = active_sessions[session_id]
             if call.from_user.id == session.creator_id:
-                session.end_stream()
+                end_message = session.end_stream()
                 # Уведомляем всех зрителей
                 for viewer_id in session.viewers:
                     bot.send_message(
                         viewer_id,
-                        "🛑️ Создатель завершил поток"
+                        end_message
                     )
 
 @bot.message_handler(func=lambda message: True)
