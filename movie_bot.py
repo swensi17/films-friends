@@ -262,10 +262,20 @@ def handle_callback(call):
                 end_message = session.end_stream()
                 # Уведомляем всех зрителей
                 for viewer_id in session.viewers:
-                    bot.send_message(
-                        viewer_id,
-                        end_message
-                    )
+                    try:
+                        bot.send_message(viewer_id, end_message)
+                    except Exception as e:
+                        print(f"Error sending end message to {viewer_id}: {e}")
+                
+                bot.answer_callback_query(
+                    call.id,
+                    "✅ Трансляция успешно завершена"
+                )
+            else:
+                bot.answer_callback_query(
+                    call.id,
+                    "❌ Только создатель может завершить трансляцию"
+                )
 
 @bot.message_handler(func=lambda message: True)
 def handle_messages(message):
