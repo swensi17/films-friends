@@ -19,7 +19,7 @@ class StreamSession:
         self.creator_name = creator_name
         self.title = title
         self.created_at = datetime.now().strftime("%H:%M:%S")
-        self.viewers = {}  # {user_id: {'name': name, 'joined_at': time}}
+        self.viewers = {}  # {user_id: {'name': name, 'joined_at': time, 'last_active': time}}
         self.current_time = 0
         self.start_timestamp = datetime.now().timestamp()
         self.is_active = True
@@ -29,7 +29,8 @@ class StreamSession:
         if user_id not in self.viewers:
             self.viewers[user_id] = {
                 'name': user_name,
-                'joined_at': datetime.now().strftime("%H:%M:%S")
+                'joined_at': datetime.now().strftime("%H:%M:%S"),
+                'last_active': datetime.now().timestamp()
             }
             return True
         return False
@@ -322,6 +323,15 @@ def handle_webapp_data(message):
                         )
                     except Exception as e:
                         print(f"Error sending time sync: {e}")
+            
+            elif action == 'viewer_left':
+                session.remove_viewer(message.from_user.id)
+                broadcast_viewer_count(session_id)
+            
+            elif action == 'viewer_active':
+                # Обновляем активность зрителя
+                if message.from_user.id in session.viewers:
+                    session.viewers[message.from_user.id]['last_active'] = datetime.now().timestamp()
             
             elif action == 'update_time' and message.from_user.id == session.creator_id:
                 current_time = float(data.get('currentTime', 0))
