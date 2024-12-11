@@ -3,23 +3,63 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Совместный просмотр</title>
+    <title>Прямой эфир</title>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-            transition: all 0.3s ease;
-        }
-
         body {
             margin: 0;
             padding: 0;
-            background-color: #1a1a1a;
+            background-color: #000;
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+        }
+
+        .header {
+            background: rgba(0, 0, 0, 0.8);
             color: white;
+            padding: 10px;
+            text-align: center;
             font-family: Arial, sans-serif;
-            min-height: 100vh;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .live-indicator {
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+        }
+
+        .live-dot {
+            width: 8px;
+            height: 8px;
+            background: red;
+            border-radius: 50%;
+            animation: pulse 1.5s infinite;
+        }
+
+        .viewers-count {
+            margin-right: 10px;
+        }
+
+        @keyframes pulse {
+            0% { opacity: 1; }
+            50% { opacity: 0.5; }
+            100% { opacity: 1; }
+        }
+
+        .video-container {
+            flex-grow: 1;
+            position: relative;
+            background: #000;
+        }
+
+        video {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
         }
 
         .loading {
@@ -28,7 +68,7 @@
             left: 0;
             right: 0;
             bottom: 0;
-            background: rgba(0,0,0,0.9);
+            background: #000;
             display: flex;
             justify-content: center;
             align-items: center;
@@ -36,10 +76,10 @@
         }
 
         .loading-spinner {
-            width: 50px;
-            height: 50px;
-            border: 5px solid #f3f3f3;
-            border-top: 5px solid #3498db;
+            width: 40px;
+            height: 40px;
+            border: 4px solid #333;
+            border-top: 4px solid #fff;
             border-radius: 50%;
             animation: spin 1s linear infinite;
         }
@@ -48,414 +88,82 @@
             0% { transform: rotate(0deg); }
             100% { transform: rotate(360deg); }
         }
-
-        .player-container {
-            width: 100%;
-            max-width: 1200px;
-            margin: 0 auto;
-            padding: 20px;
-            opacity: 0;
-            transform: translateY(20px);
-            animation: fadeIn 0.5s ease forwards;
-        }
-
-        @keyframes fadeIn {
-            to {
-                opacity: 1;
-                transform: translateY(0);
-            }
-        }
-
-        .video-wrapper {
-            position: relative;
-            width: 100%;
-            background: #000;
-            border-radius: 12px;
-            overflow: hidden;
-            box-shadow: 0 10px 20px rgba(0,0,0,0.3);
-            margin-bottom: 20px;
-        }
-
-        .video-player {
-            width: 100%;
-            aspect-ratio: 16/9;
-            background: #000;
-            border-radius: 12px;
-        }
-
-        .controls {
-            margin-top: 15px;
-            display: flex;
-            justify-content: center;
-            gap: 15px;
-            flex-wrap: wrap;
-        }
-
-        .button {
-            background: #2ea6ff;
-            border: none;
-            padding: 12px 24px;
-            border-radius: 8px;
-            color: white;
-            cursor: pointer;
-            font-size: 16px;
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            transition: transform 0.2s ease, background 0.3s ease;
-        }
-
-        .button:hover {
-            background: #1e90ff;
-            transform: translateY(-2px);
-        }
-
-        .button:active {
-            transform: translateY(0);
-        }
-
-        .info-panel {
-            background: rgba(255,255,255,0.1);
-            border-radius: 12px;
-            padding: 20px;
-            margin-top: 20px;
-            backdrop-filter: blur(10px);
-        }
-
-        .viewers {
-            margin-top: 15px;
-        }
-
-        .viewer-list {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 10px;
-            margin-top: 10px;
-        }
-
-        .viewer-item {
-            background: rgba(255,255,255,0.1);
-            padding: 8px 15px;
-            border-radius: 20px;
-            font-size: 14px;
-            display: flex;
-            align-items: center;
-            gap: 8px;
-        }
-
-        .viewer-item.creator {
-            background: linear-gradient(45deg, #ff6b6b, #feca57);
-            color: white;
-        }
-
-        .viewer-join-notification {
-            position: fixed;
-            top: 20px;
-            right: 20px;
-            background: rgba(46, 213, 115, 0.9);
-            color: white;
-            padding: 15px 20px;
-            border-radius: 10px;
-            animation: slideIn 0.5s ease forwards, fadeOut 0.5s ease 3s forwards;
-            z-index: 1000;
-        }
-
-        @keyframes slideIn {
-            from {
-                transform: translateX(100%);
-                opacity: 0;
-            }
-            to {
-                transform: translateX(0);
-                opacity: 1;
-            }
-        }
-
-        @keyframes fadeOut {
-            to {
-                opacity: 0;
-                visibility: hidden;
-            }
-        }
-
-        .stream-info {
-            background: rgba(255,255,255,0.1);
-            border-radius: 12px;
-            padding: 15px;
-            margin-bottom: 20px;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        }
-
-        .stream-status {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-        }
-
-        .status-dot {
-            width: 10px;
-            height: 10px;
-            border-radius: 50%;
-            background: #2ecc71;
-            animation: pulse 2s infinite;
-        }
-
-        @keyframes pulse {
-            0% {
-                transform: scale(1);
-                opacity: 1;
-            }
-            50% {
-                transform: scale(1.2);
-                opacity: 0.7;
-            }
-            100% {
-                transform: scale(1);
-                opacity: 1;
-            }
-        }
-
-        .chat {
-            margin-top: 20px;
-            height: 300px;
-            background: rgba(255,255,255,0.05);
-            border-radius: 12px;
-            padding: 15px;
-            overflow-y: auto;
-            display: flex;
-            flex-direction: column;
-        }
-
-        .chat-message {
-            background: rgba(255,255,255,0.1);
-            padding: 10px 15px;
-            border-radius: 8px;
-            margin-bottom: 10px;
-            max-width: 80%;
-            align-self: flex-start;
-            word-break: break-word;
-        }
-
-        .chat-message.own {
-            background: #2ea6ff;
-            align-self: flex-end;
-        }
-
-        .chat-input {
-            display: flex;
-            gap: 10px;
-            margin-top: 15px;
-        }
-
-        .chat-input input {
-            flex: 1;
-            padding: 12px;
-            border: none;
-            border-radius: 8px;
-            background: rgba(255,255,255,0.1);
-            color: white;
-            font-size: 16px;
-        }
-
-        .chat-input input:focus {
-            outline: none;
-            background: rgba(255,255,255,0.15);
-        }
-
-        @media (max-width: 768px) {
-            .player-container {
-                padding: 10px;
-            }
-            
-            .controls {
-                flex-direction: column;
-            }
-            
-            .button {
-                width: 100%;
-                justify-content: center;
-            }
-        }
     </style>
 </head>
 <body>
+    <div class="header">
+        <div class="live-indicator">
+            <div class="live-dot"></div>
+            LIVE
+        </div>
+        <div class="viewers-count">👥 <span id="viewersCount">0</span></div>
+    </div>
+
+    <div class="video-container">
+        <video id="videoPlayer" playsinline autoplay muted></video>
+    </div>
+
     <div id="loading" class="loading">
         <div class="loading-spinner"></div>
     </div>
 
-    <div class="player-container">
-        <div class="stream-info">
-            <div class="stream-status">
-                <div class="status-dot"></div>
-                <span>Прямой эфир</span>
-            </div>
-            <div class="viewers-count">
-                👥 <span id="viewersCount">0</span> зрителей
-            </div>
-        </div>
-
-        <div class="video-wrapper">
-            <video id="player" class="video-player" controls>
-                <source id="videoSource" src="" type="video/mp4">
-                Ваш браузер не поддерживает видео.
-            </video>
-        </div>
-        
-        <div class="controls">
-            <button class="button" onclick="syncTime()">
-                <span>🔄</span> Синхронизировать
-            </button>
-            <button class="button" onclick="shareTime()">
-                <span>📤</span> Поделиться временем
-            </button>
-            <button class="button" onclick="toggleFullscreen()">
-                <span>⛶</span> Полный экран
-            </button>
-        </div>
-
-        <div class="info-panel">
-            <div class="viewers">
-                <h3>👥 Зрители онлайн:</h3>
-                <div id="viewersList" class="viewer-list"></div>
-            </div>
-
-            <div class="chat">
-                <div id="chatMessages"></div>
-                <div class="chat-input">
-                    <input type="text" id="messageInput" placeholder="Написать сообщение...">
-                    <button class="button" onclick="sendMessage()">
-                        <span>📤</span>
-                    </button>
-                </div>
-            </div>
-        </div>
-    </div>
-
     <script>
-        let tg = window.Telegram.WebApp;
-        let player;
+        const tg = window.Telegram.WebApp;
+        const videoPlayer = document.getElementById('videoPlayer');
+        const loading = document.getElementById('loading');
+        const viewersCount = document.getElementById('viewersCount');
         let session_id;
-        let isCreator = false;
-        
+
         // Получаем параметры из URL
         const urlParams = new URLSearchParams(window.location.search);
         session_id = urlParams.get('session');
         const videoUrl = decodeURIComponent(urlParams.get('url'));
         const startTime = parseFloat(urlParams.get('t')) || 0;
 
-        // Инициализация плеера
-        function initializePlayer() {
-            if (!videoUrl) {
-                document.getElementById('error').textContent = 'Ошибка: URL видео не найден';
-                document.getElementById('loading').style.display = 'none';
-                return;
-            }
+        // Инициализация
+        async function init() {
+            tg.ready();
+            tg.expand();
 
-            player = new Plyr('#player', {
-                controls: ['play', 'progress', 'current-time', 'mute', 'volume', 'fullscreen'],
-                resetOnEnd: true
-            });
-
-            const video = document.querySelector('video');
-            video.src = videoUrl;
-
-            player.on('ready', () => {
-                document.getElementById('loading').style.display = 'none';
-                // Устанавливаем начальное время
-                player.currentTime = startTime;
+            if (videoUrl) {
+                videoPlayer.src = videoUrl;
+                videoPlayer.currentTime = startTime;
                 
-                // Уведомляем о присоединении зрителя
+                // Автоматически включаем звук после первого взаимодействия
+                document.addEventListener('click', () => {
+                    videoPlayer.muted = false;
+                }, { once: true });
+
+                // Уведомляем о присоединении
                 tg.sendData(JSON.stringify({
                     action: 'viewer_joined',
                     session_id: session_id
                 }));
-
-                // Начинаем периодическую синхронизацию времени
-                setInterval(syncTime, 5000);
-            });
-
-            // Обработка событий плеера
-            player.on('play', () => {
-                if (isCreator) {
-                    shareTime();
-                }
-            });
-
-            player.on('pause', () => {
-                if (isCreator) {
-                    shareTime();
-                }
-            });
-
-            player.on('timeupdate', () => {
-                if (isCreator && player.playing) {
-                    shareTime();
-                }
-            });
-
-            // Блокируем управление для не-создателей
-            if (!isCreator) {
-                player.on('play', (event) => {
-                    event.preventDefault();
-                });
-                player.on('pause', (event) => {
-                    event.preventDefault();
-                });
-                player.on('seeking', (event) => {
-                    event.preventDefault();
-                });
             }
         }
 
-        // Обработка данных от бота
+        // Обработка событий видео
+        videoPlayer.addEventListener('loadeddata', () => {
+            loading.style.display = 'none';
+            videoPlayer.play().catch(() => {
+                // Игнорируем ошибку автовоспроизведения
+            });
+        });
+
+        // Обработка сообщений от бота
         tg.onEvent('message', function(message) {
             try {
                 const data = JSON.parse(message);
-                if (data.type === 'time_update') {
-                    player.currentTime = data.time;
-                    if (data.is_playing) {
-                        player.play();
-                    } else {
-                        player.pause();
-                    }
-                } else if (data.type === 'viewer_update') {
-                    updateViewersList(data.viewers);
+                if (data.type === 'viewer_update') {
+                    viewersCount.textContent = Object.keys(data.viewers).length;
                 }
             } catch (e) {
                 console.error('Error parsing message:', e);
             }
         });
 
-        // Функция синхронизации времени
-        function syncTime() {
-            if (isCreator) {
-                shareTime();
-            }
-        }
-
-        // Отправка текущего времени боту
-        function shareTime() {
-            tg.sendData(JSON.stringify({
-                action: 'update_time',
-                session_id: session_id,
-                currentTime: player.currentTime,
-                is_playing: !player.paused
-            }));
-        }
-
-        // Инициализация при загрузке страницы
-        window.addEventListener('load', () => {
-            tg.ready();
-            tg.expand();
-            
-            // Устанавливаем видео источник
-            const video = document.querySelector('video');
-            video.src = videoUrl;
-            
-            initializePlayer();
-        });
+        // Запуск
+        init();
     </script>
 </body>
 </html>
